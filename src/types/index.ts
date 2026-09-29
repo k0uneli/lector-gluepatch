@@ -89,6 +89,8 @@ export interface Lesson {
   segmentWords?: string | null;
   createdAt: string;
   lastReadAt: string;
+  /** Set on audio-backed lessons (#185): disk path like 'audio/<id>.mp4'. */
+  audioPath?: string | null;
   /** Set on audio-backed lessons (#185): the audio file's playable duration. */
   audioDurationMs?: number | null;
   transcriptionStatus?: TranscriptionStatus | null;

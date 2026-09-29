@@ -20,6 +20,8 @@ import {
   getLessonsForCollection,
   getLessonSegments,
   lessonAudioUrl,
+  lessonVideoUrl,
+  isVideoLesson,
   retryTranscription,
   getKnownWordsMap,
   saveVocab,
@@ -1276,7 +1278,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   return (
     <div className="flex h-dvh flex-col overflow-x-hidden bg-card 2xl:flex-row print:block print:h-auto print:overflow-visible">
       <div className="relative min-h-0 flex-1 overflow-hidden print:block print:h-auto print:overflow-visible">
-        {listenMode && segments.length > 0 ? (
+        {listenMode && segments.length > 0 && !isVideoLesson(lesson) ? (
           <ListenAlong
             lesson={lesson}
             segments={segments}
@@ -1297,8 +1299,13 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
             knownWordsMap={readerWordStates}
             prevLesson={prevLesson}
             nextLesson={nextLesson}
+            videoInfo={
+              isVideoLesson(lesson) && segments.length > 0
+                ? { url: lessonVideoUrl(lesson.id), segments }
+                : null
+            }
             headerAction={
-              segments.length > 0 ? (
+              segments.length > 0 && !isVideoLesson(lesson) ? (
                 <button
                   onClick={() => setListenMode(true)}
                   title="Listen along"

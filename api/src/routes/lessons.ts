@@ -14,7 +14,7 @@ import { lookupReadings } from '../lib/dictionary-db';
 import { analyserReadings } from '../lib/ja-morphology';
 import { resolveLanguage } from '../lib/active-language';
 import { getCurrentUserId } from '../lib/user';
-import { audioContentType, deleteAudioFile } from '../lib/audio-files';
+import { audioContentType, deleteAudioFile, isVideoFile, videoContentType } from '../lib/audio-files';
 import { entitlements, planLimitResponse } from '../lib/entitlements';
 import { aggregateGrowthCheck, growingRowCheck, lessonTextBytes } from '../lib/storage-limits';
 import {
@@ -152,6 +152,60 @@ app.get('/:id/audio', async (c) => {
   const match = range?.match(/^bytes=(\d*)-(\d*)$/);
   if (match && (match[1] !== '' || match[2] !== '')) {
     // Suffix form (bytes=-N) means "the last N bytes".
+    const start =
+      match[1] === '' ? Math.max(0, size - parseInt(match[2], 10)) : parseInt(match[1], 10);
+    let end = match[1] !== '' && match[2] !== '' ? parseInt(match[2], 10) : size - 1;
+    end = Math.min(end, size - 1);
+    if (start > end || start >= size) {
+      return new Response(null, {
+        status: 416,
+        headers: { 'Content-Range': `bytes */${size}` },
+      });
+    }
+    return new Response(file.slice(start, end + 1), {
+      status: 206,
+      headers: {
+        'Content-Type': contentType,
+        'Content-Range': `bytes ${start}-${end}/${size}`,
+        'Content-Length': String(end - start + 1),
+        'Accept-Ranges': 'bytes',
+      },
+    });
+  }
+
+  return new Response(file, {
+    status: 200,
+    headers: {
+      'Content-Type': contentType,
+      'Content-Length': String(size),
+      'Accept-Ranges': 'bytes',
+    },
+  });
+});
+
+// GET /api/lessons/:id/video
+// Range-seekable video serving for uploaded video files (mp4/webm).
+// Same range logic as the audio endpoint but with video/* content types.
+app.get('/:id/video', async (c) => {
+  const userId = getCurrentUserId(c);
+  const id = c.req.param('id');
+  const lang = resolveLanguage(c.req.query('language'), userId);
+  const lesson = db
+    .prepare('SELECT audioPath FROM lessons WHERE id = ? AND userId = ? AND language = ?')
+    .get(id, userId, lang) as { audioPath: string | null } | undefined;
+  if (!lesson?.audioPath || !isVideoFile(lesson.audioPath)) {
+    return c.json({ error: 'Lesson has no video' }, 404);
+  }
+  const file = Bun.file(lesson.audioPath);
+  if (!(await file.exists())) {
+    return c.json({ error: 'Video file is missing' }, 404);
+  }
+  const size = file.size;
+  const contentType = videoContentType(lesson.audioPath);
+
+  const range = c.req.header('range');
+  const match = range?.match(/^bytes=(\d*)-(\d*)$/);
+  if (match && (match[1] !== '' || match[2] !== '')) {
     const start =
       match[1] === '' ? Math.max(0, size - parseInt(match[2], 10)) : parseInt(match[1], 10);
     let end = match[1] !== '' && match[2] !== '' ? parseInt(match[2], 10) : size - 1;

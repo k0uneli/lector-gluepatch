@@ -385,6 +385,18 @@ export function lessonAudioUrl(lessonId: string): string {
   return apiUrl(`/api/lessons/${lessonId}/audio`);
 }
 
+/** Direct (range-seekable) video URL for video-backed lessons — feed it to <video src>. */
+export function lessonVideoUrl(lessonId: string): string {
+  return apiUrl(`/api/lessons/${lessonId}/video`);
+}
+
+/** Whether a lesson's uploaded file is a video container (mp4/webm). */
+export function isVideoLesson(lesson: { audioPath?: string | null }): boolean {
+  if (!lesson.audioPath) return false;
+  const ext = lesson.audioPath.split('.').pop()?.toLowerCase();
+  return ext === 'mp4' || ext === 'webm';
+}
+
 export async function retryTranscription(lessonId: string): Promise<void> {
   const res = await apiFetch(`/api/lessons/${lessonId}/retry-transcription`, { method: 'POST' });
   await requireOk(res, 'Could not retry transcription');

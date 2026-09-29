@@ -25,6 +25,21 @@ const AUDIO_CONTENT_TYPES: Record<string, string> = {
   '.webm': 'audio/webm',
 };
 
+const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm']);
+
+const VIDEO_CONTENT_TYPES: Record<string, string> = {
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+};
+
+export function isVideoFile(filePath: string): boolean {
+  return VIDEO_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
+export function videoContentType(filePath: string): string {
+  return VIDEO_CONTENT_TYPES[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream';
+}
+
 /** The upload's extension, lowercased, when it's a supported audio container; null otherwise. */
 export function allowedAudioExtension(filename: string): string | null {
   const ext = path.extname(filename).toLowerCase();
