@@ -45,6 +45,7 @@ const SETTING_VALUE_BYTE_LIMITS: Record<string, number> = {
   sttUrl: 1024,
   sttModel: 256,
   sttApiKey: 2048,
+  ankiNoteFormats: 6 * 1024,
 };
 
 export function settingValueByteLimit(key: string): number {
@@ -79,6 +80,8 @@ export const KNOWN_SETTING_KEYS = new Set([
   // default) or 'addon' (server-side queue + Lector Sync addon — forced in
   // cloud, opt-in for self-hosters whose Lector is HTTPS/remote).
   'ankiTransport',
+  // Per-language note type + field mapping for AnkiConnect exports.
+  'ankiNoteFormats',
   // Voice cloze speech recognition: 'asr' reuses the audio-import ASR env,
   // 'custom' reads the sttUrl/sttProtocol/sttModel/sttApiKey keys.
   'sttSource',
@@ -102,6 +105,37 @@ export const KNOWN_SETTING_KEYS = new Set([
  * "unset the endpoint" (the settings UI writes '' to clear a field).
  */
 const ANKI_TRANSPORTS = new Set(['ankiconnect', 'addon']);
+const ANKI_CARD_KINDS = new Set(['word', 'sentence']);
+// Mirrors AnkiFieldSource in src/lib/anki-formats.ts.
+const ANKI_FIELD_SOURCES = new Set([
+  'word',
+  'sentence',
+  'sentenceCloze',
+  'definition',
+  'definition2',
+  'image',
+  'audio',
+]);
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function validateAnkiNoteFormats(value: unknown): string | null {
+  const invalid = 'ankiNoteFormats must map languages to word/sentence note formats';
+  if (!isPlainObject(value)) return invalid;
+  for (const [language, perLanguage] of Object.entries(value)) {
+    if (!isValidLanguageCode(language) || !isPlainObject(perLanguage)) return invalid;
+    for (const [kind, format] of Object.entries(perLanguage)) {
+      if (!ANKI_CARD_KINDS.has(kind) || !isPlainObject(format)) return invalid;
+      if (typeof format.modelName !== 'string' || !isPlainObject(format.fields)) return invalid;
+      for (const source of Object.values(format.fields)) {
+        if (typeof source !== 'string' || !ANKI_FIELD_SOURCES.has(source)) return invalid;
+      }
+    }
+  }
+  return null;
+}
 export const STT_SOURCES = ['asr', 'custom'] as const;
 export const STT_PROTOCOLS = ['http', 'realtime'] as const;
 const STT_ENUMS: Record<string, ReadonlySet<string>> = {
@@ -141,6 +175,10 @@ export function validateSettingWrite(key: string, value: unknown): string | null
     if (typeof value !== 'string' || !ANKI_TRANSPORTS.has(value)) {
       return "ankiTransport must be 'ankiconnect' or 'addon'";
     }
+  }
+  if (key === 'ankiNoteFormats' && value !== null) {
+    const err = validateAnkiNoteFormats(value);
+    if (err) return err;
   }
   const sttValues = STT_ENUMS[key];
   if (sttValues && value !== '' && value !== null) {

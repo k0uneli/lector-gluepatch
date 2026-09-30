@@ -32,7 +32,15 @@ import {
   markVocabPushedToAnki,
 } from '@/lib/data-layer';
 import { phraseSelectionLimitPayload, showPlanLimitToast } from '@/lib/plan-limits';
-import { addWordCard, addClozeCard, buildSourceLinkHtml } from '@/lib/anki';
+import { addWordCard, addClozeCard, addFormattedNote, buildSourceLinkHtml } from '@/lib/anki';
+import {
+  activeNoteFormat,
+  formatPhraseDetails,
+  isClozeFormat,
+  loadAnkiNoteFormats,
+  pickWordDefinitions,
+  type AnkiNoteFormats,
+} from '@/lib/anki-formats';
 import { queueForAnki } from '@/lib/anki-queue';
 import { useAnkiTransport } from '@/lib/anki-transport';
 import { translateWord, translatePhrase, streamWordGloss, enrichWord } from '@/lib/claude';
@@ -66,6 +74,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   const router = useRouter();
   const activeLang = useActiveLanguage();
   const ankiTransport = useAnkiTransport();
+  const [ankiFormats, setAnkiFormats] = useState<AnkiNoteFormats>({});
 
   const [lesson, setLesson] = useState<Lesson | null>(null);
   // The LESSON's pack, not the active one — same precedent as MarkdownReader.
@@ -76,6 +85,16 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
       ? getLanguageConfig(lesson.language)
       : activeLang;
   const [siblings, setSiblings] = useState<LessonSummary[]>([]);
+
+  useEffect(() => {
+    if (ankiTransport === 'ankiconnect') void loadAnkiNoteFormats().then(setAnkiFormats);
+  }, [ankiTransport]);
+  const wordNoteFormat =
+    ankiTransport === 'ankiconnect' ? activeNoteFormat(ankiFormats, lessonPack.code, 'word') : null;
+  const sentenceNoteFormat =
+    ankiTransport === 'ankiconnect'
+      ? activeNoteFormat(ankiFormats, lessonPack.code, 'sentence')
+      : null;
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Listen-along (#185): the audio lesson's transcript segments + mode toggle.
@@ -963,13 +982,25 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
       return;
     }
 
-    const noteId = await addWordCard(
-      deckName,
-      wordPanel.word,
-      translation,
-      wordMeaning,
-      source ? buildSourceLinkHtml(source) : undefined,
-    );
+    let noteId: number;
+    if (wordNoteFormat) {
+      const result = await addFormattedNote(
+        deckName,
+        wordNoteFormat,
+        { word: wordPanel.word, sentence: wordPanel.sentence, ...pickWordDefinitions(wordPanel) },
+        { audioText: wordPanel.word, language: lessonPack.code, pack: lessonPack },
+      );
+      noteId = result.noteId;
+      if (result.audioFailed) toast.warning('Added to Anki without audio — no server voice.');
+    } else {
+      noteId = await addWordCard(
+        deckName,
+        wordPanel.word,
+        translation,
+        wordMeaning,
+        source ? buildSourceLinkHtml(source) : undefined,
+      );
+    }
     await markVocabPushedToAnki(entry.id, noteId);
     setWordPanel((prev) => ({
       ...prev,
@@ -977,7 +1008,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
         ? { ...prev.existingEntry, pushedToAnki: true, ankiNoteId: noteId }
         : { ...entry, pushedToAnki: true, ankiNoteId: noteId },
     }));
-  }, [wordPanel, getAnkiDecks, ensureVocabEntry, ankiTransport]);
+  }, [wordPanel, getAnkiDecks, ensureVocabEntry, ankiTransport, wordNoteFormat, lessonPack]);
 
   const addClozeToAnki = useCallback(
     async (blankWord: string) => {
@@ -1018,15 +1049,32 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
         return;
       }
 
-      const noteId = await addClozeCard(
-        clozeDeck,
-        wordPanel.word,
-        blankWord,
-        translation,
-        translation,
-        source ? buildSourceLinkHtml(source) : undefined,
-        lessonPack,
-      );
+      let noteId: number;
+      if (sentenceNoteFormat) {
+        const result = await addFormattedNote(
+          clozeDeck,
+          sentenceNoteFormat,
+          {
+            word: blankWord,
+            sentence: wordPanel.word,
+            definition: translation,
+            definition2: formatPhraseDetails(wordPanel.phraseDetails),
+          },
+          { audioText: wordPanel.word, language: lessonPack.code, pack: lessonPack },
+        );
+        noteId = result.noteId;
+        if (result.audioFailed) toast.warning('Added to Anki without audio — no server voice.');
+      } else {
+        noteId = await addClozeCard(
+          clozeDeck,
+          wordPanel.word,
+          blankWord,
+          translation,
+          translation,
+          source ? buildSourceLinkHtml(source) : undefined,
+          lessonPack,
+        );
+      }
       await markVocabPushedToAnki(entry.id, noteId);
       setWordPanel((prev) => ({
         ...prev,
@@ -1035,7 +1083,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
           : { ...entry, pushedToAnki: true, ankiNoteId: noteId },
       }));
     },
-    [wordPanel, getAnkiDecks, ensureVocabEntry, ankiTransport, lessonPack],
+    [wordPanel, getAnkiDecks, ensureVocabEntry, ankiTransport, lessonPack, sentenceNoteFormat],
   );
 
   const retranslateWithAi = useCallback(async () => {
@@ -1362,6 +1410,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
           onLookupWord={handleNestedLookup}
           onAddToAnki={!wordPanel.word.includes(' ') ? addWordToAnki : undefined}
           onAddCloze={wordPanel.word.includes(' ') ? addClozeToAnki : undefined}
+          sentenceCardIsCloze={!sentenceNoteFormat || isClozeFormat(sentenceNoteFormat)}
         />
       </TranslationDrawerSlot>
       {onboardingActive && (

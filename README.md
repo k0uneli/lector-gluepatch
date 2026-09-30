@@ -141,6 +141,8 @@ Two transports exist. Open Settings, then Anki Integration, then Connection.
 
 **Lector Sync add-on for cloud mode or a remote HTTPS self-host.** A page on HTTPS cannot call `localhost` on the computer that runs Anki. The add-on runs inside Anki Desktop. It pulls queued cards onto `Lector` note types. It writes review states back to Lector. Point `api_url` at your Lector origin.
 
+**Your own note types with AnkiConnect.** Open Settings, then Anki Integration, then Card formats. Select a language and a card. The word card is for one word. The sentence card is for a phrase or a sentence that you select. Select a note type, then select a Lector value for each field. The values are Word, Sentence, Sentence (cloze), Definition, Definition #2, Image, and Pronunciation. Pronunciation adds audio from the server voice. A sentence card is a cloze card only when a field uses Sentence (cloze). The Lector Sync add-on always uses the `Lector` note types.
+
 ## Configuration
 
 If you want a file, copy `.env.example` to `.env`. Compose also reads the process environment.

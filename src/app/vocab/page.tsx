@@ -19,12 +19,14 @@ import {
 import {
   addBasicCard,
   addClozeCard,
+  addFormattedNote,
   syncWordStates,
   reconcileAnkiStates,
   findNewAnkiWords,
   isAnkiConnected,
   getDeckNames,
 } from '@/lib/anki';
+import { activeNoteFormat, loadAnkiNoteFormats } from '@/lib/anki-formats';
 import { queueForAnki } from '@/lib/anki-queue';
 import { useAnkiTransport } from '@/lib/anki-transport';
 import VocabStats from './components/VocabStats';
@@ -246,18 +248,42 @@ export default function VocabPage() {
         cardType === 'cloze'
           ? addClozeCard(deck, sentence, word, translation, translation, undefined, activeLang)
           : addBasicCard(deck, sentence, word, translation, translation, activeLang);
+      const kind = cardType === 'cloze' ? 'sentence' : 'word';
+      const format = activeNoteFormat(await loadAnkiNoteFormats(), activeLang.code, kind);
 
       let successCount = 0;
       let errorCount = 0;
+      let noAudioCount = 0;
 
       for (const entry of entriesToExport) {
         try {
-          const noteId = await addCard(
-            targetDeck,
-            entry.sentence,
-            entry.text,
-            entry.translation, // doubles as the word meaning for now
-          );
+          let noteId: number;
+          if (format) {
+            const result = await addFormattedNote(
+              targetDeck,
+              format,
+              {
+                word: entry.text,
+                sentence: entry.sentence,
+                definition: entry.translation,
+                definition2: '',
+              },
+              {
+                audioText: kind === 'word' ? entry.text : entry.sentence,
+                language: activeLang.code,
+                pack: activeLang,
+              },
+            );
+            noteId = result.noteId;
+            if (result.audioFailed) noAudioCount++;
+          } else {
+            noteId = await addCard(
+              targetDeck,
+              entry.sentence,
+              entry.text,
+              entry.translation, // doubles as the word meaning for now
+            );
+          }
           await markVocabPushedToAnki(entry.id, noteId);
           successCount++;
         } catch (error) {
@@ -268,6 +294,14 @@ export default function VocabPage() {
 
       await loadData();
 
+      if (noAudioCount > 0) {
+        toast.warning(
+          `${noAudioCount} card${noAudioCount === 1 ? '' : 's'} added without audio — no server voice.`,
+          {
+            duration: 5000,
+          },
+        );
+      }
       if (errorCount === 0) {
         toast.success(
           `Exported ${successCount} ${cardLabel} card${successCount === 1 ? '' : 's'} to "${targetDeck}"`,

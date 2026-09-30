@@ -6,6 +6,7 @@ import { getSetting, setSetting } from '@/lib/data-layer';
 import { useLectorMode } from '@/lib/use-env';
 import { useCallback, useEffect, useState } from 'react';
 import { SETTINGS_KEYS } from '../../constants';
+import AnkiCardFormats from '../AnkiCardFormats';
 
 /**
  * Two transports (#241), chosen by the user — not inferred from deployment:
@@ -231,12 +232,15 @@ export default function AnkiSettings() {
           <div>
             <label className="block text-sm font-medium text-foreground">Vocab Deck</label>
             <p className="mb-1 text-xs text-muted-foreground">
-              Deck for basic cards from reader vocabulary
+              Deck for word cards and Basic exports
             </p>
             {ankiConnected && ankiDecks.length > 0 ? (
               <select
                 value={ankiDeckName}
-                onChange={(e) => localStorage.setItem(SETTINGS_KEYS.ANKI_DECK_NAME, e.target.value)}
+                onChange={(e) => {
+                  localStorage.setItem(SETTINGS_KEYS.ANKI_DECK_NAME, e.target.value);
+                  setAnkiDeckName(e.target.value);
+                }}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:ring-1 focus:ring-ring focus:outline-none"
               >
                 {ankiDecks.map((deck) => (
@@ -249,7 +253,10 @@ export default function AnkiSettings() {
               <input
                 type="text"
                 value={ankiDeckName}
-                onChange={(e) => localStorage.setItem(SETTINGS_KEYS.ANKI_DECK_NAME, e.target.value)}
+                onChange={(e) => {
+                  localStorage.setItem(SETTINGS_KEYS.ANKI_DECK_NAME, e.target.value);
+                  setAnkiDeckName(e.target.value);
+                }}
                 placeholder="Deck name"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring focus:outline-none"
               />
@@ -258,14 +265,15 @@ export default function AnkiSettings() {
           <div>
             <label className="block text-sm font-medium text-foreground">Cloze Practice Deck</label>
             <p className="mb-2 text-xs text-muted-foreground">
-              Deck for cloze cards from practice mode
+              Deck for sentence cards, cloze practice and Cloze exports
             </p>
             {ankiConnected && ankiDecks.length > 0 ? (
               <select
                 value={ankiClozeDeckName}
-                onChange={(e) =>
-                  localStorage.setItem(SETTINGS_KEYS.ANKI_CLOZE_DECK_NAME, e.target.value)
-                }
+                onChange={(e) => {
+                  localStorage.setItem(SETTINGS_KEYS.ANKI_CLOZE_DECK_NAME, e.target.value);
+                  setAnkiClozeDeckName(e.target.value);
+                }}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:ring-1 focus:ring-ring focus:outline-none"
               >
                 {ankiDecks.map((deck) => (
@@ -296,8 +304,8 @@ export default function AnkiSettings() {
             </p>
             <div className="grid grid-cols-2 gap-2">
               <Button
-                onClick={(e) => {
-                  localStorage.setItem(SETTINGS_KEYS.ANKI_CLOZE_DECK_NAME, 'basic');
+                onClick={() => {
+                  localStorage.setItem(SETTINGS_KEYS.DEFAULT_CARD_TYPE, 'basic');
                   setDefaultCardType('basic');
                 }}
                 variant={defaultCardType === 'basic' ? 'default' : 'secondary'}
@@ -305,8 +313,8 @@ export default function AnkiSettings() {
                 Basic
               </Button>
               <Button
-                onClick={(e) => {
-                  localStorage.setItem(SETTINGS_KEYS.ANKI_CLOZE_DECK_NAME, 'cloze');
+                onClick={() => {
+                  localStorage.setItem(SETTINGS_KEYS.DEFAULT_CARD_TYPE, 'cloze');
                   setDefaultCardType('cloze');
                 }}
                 variant={defaultCardType === 'cloze' ? 'default' : 'secondary'}
@@ -315,6 +323,8 @@ export default function AnkiSettings() {
               </Button>
             </div>
           </div>
+
+          <AnkiCardFormats connected={ankiConnected} />
         </>
       )}
     </section>

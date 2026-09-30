@@ -346,7 +346,7 @@
     domain: "anki",
     md: "anki.md#push-to-anki",
     summary: "AnkiConnect addNote from the browser, or POST /api/anki/queue for the add-on.",
-    steps: ["fn:useAnkiTransport", "fn:addWordCard", "fn:queueForAnki", "route:anki-queue", "table:anki_pending"],
+    steps: ["fn:useAnkiTransport", "fn:addWordCard", "fn:addFormattedNote", "fn:queueForAnki", "route:anki-queue", "table:anki_pending"],
   });
   N("flow:anki-sync", "flow", "Sync Anki reviews", {
     domain: "anki",
@@ -530,6 +530,7 @@
   N("file:anki-client", "file", "anki.ts", { path: "src/lib/anki.ts", domain: "anki" });
   N("file:anki-queue", "file", "anki-queue.ts", { path: "src/lib/anki-queue.ts", domain: "anki" });
   N("file:anki-transport", "file", "anki-transport.ts", { path: "src/lib/anki-transport.ts", domain: "anki" });
+  N("file:anki-formats", "file", "anki-formats.ts", { path: "src/lib/anki-formats.ts", domain: "anki" });
   N("file:setup-page", "file", "Setup page", { path: "src/app/setup/page.tsx", domain: "onboarding" });
   N("file:setup-guard", "file", "SetupGuard", { path: "src/components/SetupGuard/index.tsx", domain: "onboarding" });
   N("file:onboarding-client", "file", "onboarding.ts", { path: "src/lib/onboarding.ts", domain: "onboarding" });
@@ -683,6 +684,9 @@
   N("fn:speak", "fn", "speak", { path: "src/lib/tts.ts" });
   N("fn:queueForAnki", "fn", "queueForAnki", { path: "src/lib/anki-queue.ts" });
   N("fn:addWordCard", "fn", "addWordCard", { path: "src/lib/anki.ts" });
+  N("fn:addFormattedNote", "fn", "addFormattedNote", { path: "src/lib/anki.ts" });
+  N("fn:renderNoteFields", "fn", "renderNoteFields", { path: "src/lib/anki-formats.ts" });
+  N("fn:synthesizeSpeech", "fn", "synthesizeSpeech", { path: "src/lib/tts.ts" });
   N("fn:useAnkiTransport", "fn", "useAnkiTransport", { path: "src/lib/anki-transport.ts" });
   N("fn:syncWordStates", "fn", "syncWordStates", { path: "src/lib/anki.ts" });
   N("fn:seedStarterContent", "fn", "seedStarterContent", { path: "src/lib/data-layer.ts" });
@@ -1234,6 +1238,13 @@
   edge("fn:useAnkiTransport", "file:anki-transport", "in");
   edge("flow:anki-push", "fn:addWordCard", "calls");
   edge("fn:addWordCard", "file:anki-client", "in");
+  edge("flow:anki-push", "fn:addFormattedNote", "calls");
+  edge("fn:addFormattedNote", "file:anki-client", "in");
+  edge("fn:addFormattedNote", "fn:renderNoteFields", "calls");
+  edge("fn:renderNoteFields", "file:anki-formats", "in");
+  edge("fn:addFormattedNote", "fn:synthesizeSpeech", "calls");
+  edge("fn:synthesizeSpeech", "file:tts", "in");
+  edge("fn:synthesizeSpeech", "route:tts-post", "http");
   edge("flow:anki-push", "fn:queueForAnki", "calls");
   edge("fn:queueForAnki", "file:anki-queue", "in");
   edge("fn:queueForAnki", "route:anki-queue", "http");
@@ -1244,6 +1255,7 @@
   edge("file:anki-addon", "route:anki-pending", "http");
   edge("file:anki-addon", "route:anki-ack", "http");
   edge("file:read-page", "fn:addWordCard", "calls");
+  edge("file:read-page", "fn:addFormattedNote", "calls");
   edge("file:read-page", "fn:queueForAnki", "calls");
   edge("flow:anki-sync", "fn:syncWordStates", "starts");
   edge("fn:syncWordStates", "file:anki-client", "in");

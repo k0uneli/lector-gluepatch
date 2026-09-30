@@ -47,6 +47,7 @@ export default function TranslationDrawer({
   onLookupWord,
   onAddToAnki,
   onAddCloze,
+  sentenceCardIsCloze = true,
 }: TranslationDrawerProps) {
   const pack = useActiveLanguage();
   const drawerRef = useRef<HTMLDivElement>(null);
@@ -660,11 +661,17 @@ export default function TranslationDrawer({
                       onClick={() => setClozePickerOpen(true)}
                       className="flex w-full items-center justify-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                     >
-                      Add to Anki as Cloze
+                      {sentenceCardIsCloze
+                        ? 'Add to Anki as Cloze'
+                        : 'Add to Anki as sentence card'}
                     </button>
                   ) : (
                     <div className="space-y-2">
-                      <p className="text-xs text-muted-foreground">Pick a word to blank:</p>
+                      <p className="text-xs text-muted-foreground">
+                        {sentenceCardIsCloze
+                          ? 'Pick a word to blank:'
+                          : 'Pick the target word (optional):'}
+                      </p>
                       <div className="flex flex-wrap gap-1" data-testid="cloze-word-chips">
                         {word
                           .split(/\s+/)
@@ -709,24 +716,26 @@ export default function TranslationDrawer({
                           data-testid="cloze-send-btn"
                           onClick={async () => {
                             if (
-                              !clozeBlankWord ||
+                              (sentenceCardIsCloze && !clozeBlankWord) ||
                               clozeStatus === 'loading' ||
                               clozeStatus === 'done'
                             )
                               return;
                             setClozeStatus('loading');
                             try {
-                              await onAddCloze(clozeBlankWord);
+                              await onAddCloze(clozeBlankWord ?? '');
                               setClozeStatus('done');
                             } catch {
                               setClozeStatus('error');
                             }
                           }}
                           disabled={
-                            !clozeBlankWord || clozeStatus === 'loading' || clozeStatus === 'done'
+                            (sentenceCardIsCloze && !clozeBlankWord) ||
+                            clozeStatus === 'loading' ||
+                            clozeStatus === 'done'
                           }
                           className={`flex-1 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-                            !clozeBlankWord || clozeStatus === 'loading'
+                            (sentenceCardIsCloze && !clozeBlankWord) || clozeStatus === 'loading'
                               ? 'cursor-not-allowed border-border text-muted-foreground opacity-50'
                               : clozeStatus === 'done'
                                 ? 'cursor-default border-primary/40 bg-primary/10 text-[var(--primary-text)]'

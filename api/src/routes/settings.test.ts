@@ -13,6 +13,7 @@ const TEST_KEYS = [
   'openaiUrl',
   'openaiApiKey',
   'ankiTransport',
+  'ankiNoteFormats',
   'targetLanguage',
   'enabledLanguages',
   'sttSource',
@@ -84,6 +85,29 @@ describe('settings write validation (#233)', () => {
     expect((await putKey('ankiTransport', 'carrier-pigeon')).status).toBe(400);
     expect((await putKey('ankiTransport', 42)).status).toBe(400);
     expect(storedValue('ankiTransport')).toBe(JSON.stringify('ankiconnect'));
+  });
+
+  test('ankiNoteFormats accepts per-language note formats with known field values', async () => {
+    const formats = {
+      ru: {
+        word: { modelName: 'Mining', fields: { Expression: 'word', Audio: 'audio' } },
+        sentence: { modelName: 'Cloze', fields: { Text: 'sentenceCloze' } },
+      },
+    };
+    expect((await putKey('ankiNoteFormats', formats)).status).toBe(200);
+    expect(storedValue('ankiNoteFormats')).toBe(JSON.stringify(formats));
+
+    const bad = [
+      'Mining',
+      { klingon: { word: { modelName: 'M', fields: {} } } },
+      { ru: { reverse: { modelName: 'M', fields: {} } } },
+      { ru: { word: { modelName: 42, fields: {} } } },
+      { ru: { word: { modelName: 'M', fields: { Expression: 'furigana' } } } },
+    ];
+    for (const value of bad) {
+      expect((await putKey('ankiNoteFormats', value)).status).toBe(400);
+    }
+    expect(storedValue('ankiNoteFormats')).toBe(JSON.stringify(formats));
   });
 
   test('URL keys reject non-http(s) values', async () => {
