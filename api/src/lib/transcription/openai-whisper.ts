@@ -63,12 +63,16 @@ export class OpenAIWhisperProvider implements TranscriptionProvider {
     form.append('language', options.language);
     form.append('response_format', 'verbose_json');
 
-    const response = await fetch(`${this.baseUrl}/v1/audio/transcriptions`, {
+    const init: RequestInit & { timeout: false } = {
       method: 'POST',
       headers: this.headers(),
       body: form,
       signal: AbortSignal.timeout(this.timeoutMs),
-    });
+      // Bun's fetch aborts a file upload after ~6 min without a response, and a
+      // long recording transcribes for longer. The signal above is the limit.
+      timeout: false,
+    };
+    const response = await fetch(`${this.baseUrl}/v1/audio/transcriptions`, init);
     if (!response.ok) {
       const detail = (await response.text().catch(() => '')).slice(0, 500);
       throw new Error(`ASR provider returned ${response.status}: ${detail}`);

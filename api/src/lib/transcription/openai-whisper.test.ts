@@ -88,6 +88,22 @@ describe('OpenAIWhisperProvider', () => {
     ).rejects.toThrow('empty transcript');
   });
 
+  test("turns off Bun's own fetch timeout, so a long transcription is not cut off", async () => {
+    const originalFetch = globalThis.fetch;
+    let captured: (RequestInit & { timeout?: unknown }) | undefined;
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      captured = init;
+      return Response.json({ text: 'Goeie môre.', segments: [] });
+    }) as unknown as typeof fetch;
+    try {
+      await provider().transcribe(AUDIO, { language: 'af', filename: 'clip.ogg' });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(captured?.timeout).toBe(false);
+    expect(captured?.signal).toBeInstanceOf(AbortSignal);
+  });
+
   test('healthCheck reports reachability', async () => {
     expect(await provider().healthCheck()).toEqual({ ok: true });
     const dead = new OpenAIWhisperProvider({ baseUrl: 'http://localhost:1', timeoutMs: 500 });
