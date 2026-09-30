@@ -14,10 +14,12 @@
 // in-memory DB with an injected transcriber — no real ASR server, no real DB.
 
 import { Database } from 'bun:sqlite';
+import path from 'path';
 import { db } from '../db';
 import { buildSegmentWords, countWords } from './html-to-markdown';
 import { normalizeText } from './languages';
 import { packForLanguage } from './active-language';
+import { prepareAsrAudio, type AsrAudio } from './asr-audio';
 import {
   getTranscriptionProvider,
   type TranscribeOptions,
@@ -195,6 +197,7 @@ export async function transcribeNextPending(
   database: Database,
   transcribe: (audio: Blob, options: TranscribeOptions) => Promise<TranscriptionResult>,
   maxBytes?: number,
+  prepareAudio: (sourcePath: string) => Promise<AsrAudio> = prepareAsrAudio,
 ): Promise<DrainOutcome> {
   const row = selectNextPending(database);
   if (!row) return { state: 'idle' };
@@ -217,16 +220,18 @@ export async function transcribeNextPending(
     markError(database, row, 'Audio file is missing on disk');
     return { state: 'failed', lessonId: row.id, error: 'Audio file is missing on disk' };
   }
-  if (maxBytes && file.size > maxBytes) {
-    const message = `Audio file (${Math.round(file.size / 1024 / 1024)} MB) exceeds the ASR provider's ${Math.round(maxBytes / 1024 / 1024)} MB upload cap — re-encode it smaller (e.g. mono 48 kbps opus) or point ASR_URL at a local Whisper server`;
-    markError(database, row, message);
-    return { state: 'failed', lessonId: row.id, error: message };
-  }
 
+  const audio = await prepareAudio(row.audioPath);
   try {
-    const result = await transcribe(file, {
+    const upload = Bun.file(audio.path);
+    if (maxBytes && upload.size > maxBytes) {
+      const message = `Audio file (${Math.round(upload.size / 1024 / 1024)} MB) exceeds the ASR provider's ${Math.round(maxBytes / 1024 / 1024)} MB upload cap — re-encode it smaller (e.g. mono 48 kbps opus) or point ASR_URL at a local Whisper server`;
+      markError(database, row, message);
+      return { state: 'failed', lessonId: row.id, error: message };
+    }
+    const result = await transcribe(upload, {
       language: row.language,
-      filename: row.audioPath.split('/').pop() || 'audio',
+      filename: path.basename(audio.path) || 'audio',
     });
     applyTranscript(database, row, result);
     return { state: 'done', lessonId: row.id, segments: result.segments.length };
@@ -242,6 +247,8 @@ export async function transcribeNextPending(
       )
       .run(message.slice(0, 500), row.userId, row.id);
     return { state: 'retrying', lessonId: row.id, error: message };
+  } finally {
+    audio.cleanup();
   }
 }
 

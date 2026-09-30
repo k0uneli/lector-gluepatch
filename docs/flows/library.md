@@ -185,8 +185,11 @@ The lesson stores `sourceType = 'youtube'`, `sourceMeta`, and caption `segments`
 | Client | `src/lib/data-layer.ts` | `importAudio` |
 | API | `api/src/routes/import.ts` | `POST /audio` |
 | Worker | `api/src/lib/transcribe-worker.ts` | `transcribeNextPending`, `applyTranscript` |
+| ASR audio | `api/src/lib/asr-audio.ts` | `prepareAsrAudio` |
 
 The lesson starts with `transcriptionStatus = 'pending'`. The worker needs `TRANSCRIBE_WORKER=1`. After three ASR failures the status is `error`.
+
+Before the ASR call, `prepareAsrAudio` uses ffmpeg to extract the first audio track as mono 16 kHz Opus into a temporary file. The worker sends that file, then deletes it. If ffmpeg fails, or the copy is not smaller, the worker sends the original file.
 
 ### Starter texts
 

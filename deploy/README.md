@@ -59,7 +59,7 @@ Import Audio uploads a podcast or a recording. A worker transcribes it into a ti
 
 `ASR_MODEL` defaults to `whisper-large-v3`. The language hint is always sent. Enable the worker with `TRANSCRIBE_WORKER=1`. Audio files live under `DATA_DIR/audio/`. They are not part of the JSON export. The transcript text is part of the export.
 
-`ffmpeg` is optional. It supplies the duration estimate at upload time.
+`ffmpeg` is optional. It supplies the duration estimate at upload time. It also makes the file that goes to the ASR server smaller. Lector sends only the first audio track, as mono 16 kHz Opus. An 80-minute video is approximately 18 MB instead of hundreds of MB. `ASR_MAX_BYTES` applies to this smaller file. Without `ffmpeg`, Lector sends the original file.
 
 On billed cloud plans, two limits apply. Self-host ignores them.
 

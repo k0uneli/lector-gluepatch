@@ -311,6 +311,65 @@ describe('transcribeNextPending', () => {
     expect(outcome.state).toBe('failed');
     expect(lessonRow(db, id).transcriptionError).toContain('upload cap');
   });
+
+  test('sends the extracted audio under its own name, then deletes it', async () => {
+    const audioPath = await realAudioFile('film.webm', 4096);
+    const extracted = await realAudioFile('extracted.ogg', 100);
+    insertLesson(db, { audioPath });
+    let cleanups = 0;
+    const sent: { size: number; filename: string }[] = [];
+
+    const outcome = await transcribeNextPending(
+      db,
+      async (audio, options) => {
+        sent.push({ size: audio.size, filename: options.filename });
+        return RESULT;
+      },
+      undefined,
+      async () => ({ path: extracted, cleanup: () => cleanups++ }),
+    );
+
+    expect(outcome.state).toBe('done');
+    expect(sent).toEqual([{ size: 100, filename: 'extracted.ogg' }]);
+    expect(cleanups).toBe(1);
+  });
+
+  test('applies the upload cap to the extracted audio, not the original', async () => {
+    const audioPath = await realAudioFile('film.webm', 4096);
+    const extracted = await realAudioFile('small.ogg', 512);
+    insertLesson(db, { audioPath });
+
+    const outcome = await transcribeNextPending(
+      db,
+      async () => RESULT,
+      1024,
+      async () => ({
+        path: extracted,
+        cleanup: () => {},
+      }),
+    );
+
+    expect(outcome.state).toBe('done');
+  });
+
+  test('deletes the extracted audio when the ASR call fails', async () => {
+    const audioPath = await realAudioFile('film.webm', 4096);
+    const extracted = await realAudioFile('extracted.ogg', 100);
+    insertLesson(db, { audioPath });
+    let cleanups = 0;
+
+    const outcome = await transcribeNextPending(
+      db,
+      async () => {
+        throw new Error('ASR provider returned 503');
+      },
+      undefined,
+      async () => ({ path: extracted, cleanup: () => cleanups++ }),
+    );
+
+    expect(outcome.state).toBe('retrying');
+    expect(cleanups).toBe(1);
+  });
 });
 
 describe('worker gate', () => {
