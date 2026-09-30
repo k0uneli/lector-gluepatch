@@ -3,6 +3,10 @@ import type { MiddlewareHandler } from 'hono';
 
 export const DEFAULT_API_REQUEST_BODY_LIMIT_BYTES = 8 * 1024 * 1024;
 
+// Bun.serve's own ceiling (its default is 128 MiB). It must exceed every route
+// limit: Bun rejects before CORS runs, so the browser sees a network error.
+export const SERVER_MAX_REQUEST_BODY_BYTES = 1024 * 1024 * 1024;
+
 // These routes own a different ingress contract and apply their limit directly
 // at the route before parsing. Keep this exact: nearby or future routes should
 // inherit the conservative default until they deliberately add their own cap.

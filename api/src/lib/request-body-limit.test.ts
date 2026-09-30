@@ -3,8 +3,11 @@ import { Hono } from 'hono';
 import {
   DEFAULT_API_REQUEST_BODY_LIMIT_BYTES,
   makeDefaultRequestBodyLimit,
+  SERVER_MAX_REQUEST_BODY_BYTES,
   shouldApplyDefaultRequestBodyLimit,
 } from './request-body-limit';
+import { MAX_AUDIO_UPLOAD_BYTES } from '../routes/import';
+import { MAX_NON_FREE_RESTORE_BODY_BYTES } from '../routes/data';
 
 function makeApp(maxSize: number): Hono {
   const app = new Hono();
@@ -77,5 +80,12 @@ describe('default API request-body limit', () => {
     expect(shouldApplyDefaultRequestBodyLimit('GET', '/api/ordinary')).toBe(false);
     expect(shouldApplyDefaultRequestBodyLimit('head', '/api/ordinary')).toBe(false);
     expect(shouldApplyDefaultRequestBodyLimit('POST', '/api/ordinary')).toBe(true);
+  });
+});
+
+describe('server request-body ceiling', () => {
+  test('exceeds every route limit, so the route answers 413 instead of Bun', () => {
+    expect(SERVER_MAX_REQUEST_BODY_BYTES).toBeGreaterThan(MAX_AUDIO_UPLOAD_BYTES);
+    expect(SERVER_MAX_REQUEST_BODY_BYTES).toBeGreaterThan(MAX_NON_FREE_RESTORE_BODY_BYTES);
   });
 });

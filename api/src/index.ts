@@ -17,7 +17,7 @@ import { startTranscribeWorker } from './lib/transcribe-worker';
 import { startDictWorker } from './lib/dict-worker';
 import { startLifecycleEmailWorker } from './lib/lifecycle-email';
 import { isByokAvailable } from './lib/byok';
-import { defaultRequestBodyLimit } from './lib/request-body-limit';
+import { defaultRequestBodyLimit, SERVER_MAX_REQUEST_BODY_BYTES } from './lib/request-body-limit';
 // Aliased: this file's Bun.serve export below is also named `config`.
 import {
   config as deploymentConfig,
@@ -203,6 +203,7 @@ const config = {
   port,
   fetch: app.fetch,
   websocket,
+  maxRequestBodySize: SERVER_MAX_REQUEST_BODY_BYTES,
   idleTimeout: 120, // SSE streams for auto-evaluate need longer than the 10s default
 };
 

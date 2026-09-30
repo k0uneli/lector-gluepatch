@@ -24,10 +24,9 @@ import { randomUUID } from 'crypto';
 // in full here).
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
 
-// Audio uploads (#185) are podcast-episode sized. A 60-minute 128 kbps MP3 is
-// ~60 MB; 500 MB comfortably covers multi-hour recordings while still bounding
-// what one request can buffer.
-const MAX_AUDIO_UPLOAD_BYTES = 500 * 1024 * 1024; // 500 MB
+// Audio and video uploads, sized for a compressed film. The multipart body is
+// buffered in memory once, so this also bounds one request's RAM.
+export const MAX_AUDIO_UPLOAD_BYTES = 750 * 1024 * 1024;
 
 // An import can be started from inside a library group, in which case the new
 // collection lands in that group instead of Ungrouped. The multipart field is
@@ -180,7 +179,11 @@ export function makeImportRoutes({
     '/audio',
     bodyLimit({
       maxSize: MAX_AUDIO_UPLOAD_BYTES,
-      onError: (c) => c.json({ error: 'Audio file is too large (max 500 MB).' }, 413),
+      onError: (c) =>
+        c.json(
+          { error: `File is too large (max ${MAX_AUDIO_UPLOAD_BYTES / 1024 / 1024} MB).` },
+          413,
+        ),
     }),
     async (c) => {
       try {
@@ -231,7 +234,7 @@ export function makeImportRoutes({
         // The file must exist before the lesson row does: the worker treats a
         // pending row with a missing file as a terminal error.
         const audioBytes = file.size;
-        await saveAudioFile(audioPath, await file.arrayBuffer());
+        await saveAudioFile(audioPath, file);
         const durationMs = await probeDurationMs(audioPath);
         const transcriptionMinutes = estimateTranscriptionMinutes(durationMs, audioBytes);
 

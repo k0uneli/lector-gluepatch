@@ -56,7 +56,7 @@ export function audioPathForLesson(lessonId: string, extension: string): string 
 
 /** Atomic tmp-write + rename (the tts-cache idiom) so a crash mid-write never
  * leaves a half file where the transcription job will look for it. */
-export async function saveAudioFile(destPath: string, data: ArrayBuffer): Promise<void> {
+export async function saveAudioFile(destPath: string, data: Blob | ArrayBuffer): Promise<void> {
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
   const tmpPath = `${destPath}.${randomUUID()}.tmp`;
   await Bun.write(tmpPath, data);
