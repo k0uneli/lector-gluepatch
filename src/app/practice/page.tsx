@@ -68,6 +68,9 @@ import PageHeader from '@/components/PageHeader';
 import Feedback from './components/Feedback';
 import DictationCard from './components/Dictation/DictationCard';
 import DictationFeedback from './components/Dictation/DictationFeedback';
+import VoiceAnswer from './components/VoiceAnswer';
+import { isVoiceInputSupported } from '@/lib/stt';
+import { lectorMode } from '@/lib/api-base';
 import {
   completeOnboarding,
   encounteredOnboardingTerms,
@@ -135,6 +138,14 @@ export default function PracticePage() {
   const [mcCorrectIdx, setMcCorrectIdx] = useState<number>(0);
   const [mcLocked, setMcLocked] = useState(false);
   const [mcFallback, setMcFallback] = useState(false); // Temporary MC switch from type mode
+  const [typeFallback, setTypeFallback] = useState(false); // Temporary typing switch from voice mode
+
+  // Voice answers stream to the self-hosted speech recognizer (/api/stt), which
+  // cloud does not serve. The microphone also needs a secure context.
+  const voiceOffered = lectorMode() === 'selfhost';
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  // Bumped to reset the voice card when a review fails to save.
+  const [voiceKey, setVoiceKey] = useState(0);
 
   // Collection state
   const [selectedCollection, setSelectedCollection] = useState<ClozeCollection>('top500');
@@ -173,19 +184,19 @@ export default function PracticePage() {
   const onboardingRoundStartedRef = useRef(false);
   const onboardingCompletionRef = useRef(false);
   const onboardingDistractorWordsRef = useRef<string[]>([]);
-  // Pending MC feedback timer — must be cancelled on navigation/unmount so a
+  // Pending MC/voice feedback timer — must be cancelled on navigation/unmount so a
   // stale closure can't record a review for a screen the user already left.
-  const mcTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const answerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const clearMcTimer = useCallback(() => {
-    if (mcTimerRef.current !== null) {
-      clearTimeout(mcTimerRef.current);
-      mcTimerRef.current = null;
+  const clearAnswerTimer = useCallback(() => {
+    if (answerTimerRef.current !== null) {
+      clearTimeout(answerTimerRef.current);
+      answerTimerRef.current = null;
     }
   }, []);
 
-  // Cancel any pending MC timer on unmount
-  useEffect(() => clearMcTimer, [clearMcTimer]);
+  // Cancel any pending MC/voice timer on unmount
+  useEffect(() => clearAnswerTimer, [clearAnswerTimer]);
 
   // Load collection counts and seed on mount
   useEffect(() => {
@@ -194,10 +205,12 @@ export default function PracticePage() {
       setPoints(stats.points);
 
       const guided = new URLSearchParams(window.location.search).get('onboarding') === '1';
+      const canUseVoice = lectorMode() === 'selfhost' && isVoiceInputSupported();
+      setVoiceSupported(canUseVoice);
       if (!guided) {
         // Load saved practice mode
         const savedMode = localStorage.getItem('cloze-practice-mode');
-        if (savedMode === 'mc' || savedMode === 'type') {
+        if (savedMode === 'mc' || savedMode === 'type' || (savedMode === 'voice' && canUseVoice)) {
           setPracticeMode(savedMode);
         }
 
@@ -346,7 +359,7 @@ export default function PracticePage() {
       sentenceQueue: ClozeSentence[],
       override?: { format: PracticeFormat; mode: PracticeMode },
     ) => {
-      clearMcTimer();
+      clearAnswerTimer();
 
       const activeFormat = override?.format ?? practiceFormat;
       const activeMode = override?.mode ?? practiceMode;
@@ -355,6 +368,7 @@ export default function PracticePage() {
       setDictationResult(null);
       setHintLetters(0);
       setMcFallback(false);
+      setTypeFallback(false);
       setWordTooltip(null);
       submittingRef.current = false;
 
@@ -373,7 +387,7 @@ export default function PracticePage() {
         }
       }
     },
-    [practiceFormat, practiceMode, generateMcOptionsForSentence, clearMcTimer],
+    [practiceFormat, practiceMode, generateMcOptionsForSentence, clearAnswerTimer],
   );
 
   const presentRound = useCallback(
@@ -546,6 +560,7 @@ export default function PracticePage() {
         submittingRef.current = false;
         setMcLocked(false);
         setMcSelected(null);
+        setVoiceKey((key) => key + 1);
         return;
       }
 
@@ -689,13 +704,40 @@ export default function PracticePage() {
       // see which option was correct. This delay (not extra work) is why MC feels
       // slower than typing, where feedback appears the instant you submit.
       const delay = isCorrect ? 600 : 1200;
-      mcTimerRef.current = setTimeout(() => {
-        mcTimerRef.current = null;
+      answerTimerRef.current = setTimeout(() => {
+        answerTimerRef.current = null;
         recordAnswer(isCorrect, selectedWord, 'mc');
       }, delay);
     },
     [mcLocked, current, mcCorrectIdx, mcOptions, recordAnswer],
   );
+
+  // A voice answer is decided by the VoiceAnswer card; like MC, the feedback
+  // screen waits a moment so the highlighted transcript stays visible.
+  const handleVoiceAnswer = useCallback(
+    (isCorrect: boolean, transcript: string) => {
+      if (!current || submittingRef.current) return;
+      submittingRef.current = true;
+      if (isCorrect) {
+        playCorrectSound();
+      } else {
+        playIncorrectSound();
+      }
+      answerTimerRef.current = setTimeout(
+        () => {
+          answerTimerRef.current = null;
+          recordAnswer(isCorrect, transcript || '…', 'voice');
+        },
+        isCorrect ? 600 : 1200,
+      );
+    },
+    [current, recordAnswer],
+  );
+
+  const handleTypeInstead = useCallback(() => {
+    setTypeFallback(true);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, []);
 
   const finishOnboarding = useCallback(async () => {
     if (!onboardingSnapshot?.progress || onboardingCompletionRef.current) return;
@@ -782,7 +824,11 @@ export default function PracticePage() {
       return () => window.removeEventListener('keydown', handleKeyDown);
     }
     // Space to trigger TTS in type mode when input is not focused
-    if (state === 'practicing' && practiceFormat === 'cloze' && practiceMode === 'type') {
+    if (
+      state === 'practicing' &&
+      practiceFormat === 'cloze' &&
+      (practiceMode === 'type' || typeFallback)
+    ) {
       const handleKeyDown = (e: KeyboardEvent) => {
         if (isInteractiveKeyTarget(e)) return;
         if (e.key === ' ') {
@@ -798,6 +844,7 @@ export default function PracticePage() {
     handleNext,
     practiceFormat,
     practiceMode,
+    typeFallback,
     mcLocked,
     mcOptions,
     handleMcSelect,
@@ -957,7 +1004,7 @@ export default function PracticePage() {
               </div>
 
               {/* Round size + Mode in a row */}
-              <div className="mb-4 flex gap-4">
+              <div className="mb-4 flex flex-wrap gap-4">
                 <div className="flex-1">
                   <label className="mb-2 block text-xs font-medium text-muted-foreground">
                     Sentences
@@ -998,6 +1045,20 @@ export default function PracticePage() {
                       >
                         MC
                       </Button>
+                      {voiceOffered && (
+                        <Button
+                          onClick={() => handleSetPracticeMode('voice')}
+                          variant={practiceMode === 'voice' ? 'default' : 'secondary'}
+                          disabled={!voiceSupported}
+                          title={
+                            voiceSupported
+                              ? 'Say the missing word or the whole sentence'
+                              : 'Voice answers need a microphone and a secure page (HTTPS or localhost)'
+                          }
+                        >
+                          Voice
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1030,7 +1091,7 @@ export default function PracticePage() {
               <div className="mb-2 flex items-center justify-between">
                 <button
                   onClick={async () => {
-                    clearMcTimer();
+                    clearAnswerTimer();
                     if (onboardingMode) {
                       const lessonId = onboardingProgress?.recommendedLessonId;
                       router.push(lessonId ? `/read/${lessonId}?onboarding=1` : '/');
@@ -1106,6 +1167,11 @@ export default function PracticePage() {
               current &&
               practiceFormat === 'cloze' &&
               (() => {
+                const questionMode: PracticeMode = mcFallback
+                  ? 'mc'
+                  : typeFallback
+                    ? 'type'
+                    : practiceMode;
                 const fuzzyStatus = getFuzzyStatus(
                   userAnswer,
                   current.sentence.clozeWord,
@@ -1149,9 +1215,11 @@ export default function PracticePage() {
                     <div className="mb-6">
                       <div className="mb-4 flex items-center justify-between">
                         <span className="text-sm font-medium text-muted-foreground">
-                          {practiceMode === 'mc' || mcFallback
+                          {questionMode === 'mc'
                             ? 'Choose the correct word'
-                            : 'Fill in the blank'}
+                            : questionMode === 'voice'
+                              ? 'Say the missing word'
+                              : 'Fill in the blank'}
                         </span>
                         {!onboardingMode && (
                           <BlacklistSentence
@@ -1174,7 +1242,7 @@ export default function PracticePage() {
                             {i > 0 && wordGap}
                             {i === current.sentence.clozeIndex ? (
                               <>
-                                {practiceMode === 'type' && !mcFallback ? (
+                                {questionMode === 'type' ? (
                                   <input
                                     ref={inputRef}
                                     type="text"
@@ -1248,8 +1316,17 @@ export default function PracticePage() {
                       )}
                     </div>
 
+                    {questionMode === 'voice' && (
+                      <VoiceAnswer
+                        key={`${current.sentence.id}:${voiceKey}`}
+                        current={current}
+                        onAnswer={handleVoiceAnswer}
+                        onTypeInstead={handleTypeInstead}
+                      />
+                    )}
+
                     {/* Multiple choice options */}
-                    {(practiceMode === 'mc' || mcFallback) && (
+                    {questionMode === 'mc' && (
                       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                         {mcOptions.map((option, idx) => {
                           let btnClass = 'border-border bg-card text-foreground hover:bg-accent';
@@ -1313,7 +1390,7 @@ export default function PracticePage() {
                     )}
 
                     {/* Type mode buttons */}
-                    {practiceMode === 'type' && !mcFallback && (
+                    {questionMode === 'type' && (
                       <div className="flex justify-center gap-2">
                         <Button
                           type="button"
@@ -1351,7 +1428,7 @@ export default function PracticePage() {
                     )}
 
                     {/* Type mode shortcut hints */}
-                    {practiceMode === 'type' && !mcFallback && (
+                    {questionMode === 'type' && (
                       <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                         <span className="inline-flex items-center gap-1.5">
                           <Kbd>Enter</Kbd>

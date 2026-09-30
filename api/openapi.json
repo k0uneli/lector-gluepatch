@@ -8397,7 +8397,12 @@
                     "apfelModel",
                     "lmstudioUrl",
                     "lmstudioModel",
-                    "lmstudioApiKey"
+                    "lmstudioApiKey",
+                    "sttSource",
+                    "sttProtocol",
+                    "sttUrl",
+                    "sttModel",
+                    "sttApiKey"
                   ]
                 }
               }

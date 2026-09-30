@@ -15,6 +15,10 @@ const TEST_KEYS = [
   'ankiTransport',
   'targetLanguage',
   'enabledLanguages',
+  'sttSource',
+  'sttProtocol',
+  'sttUrl',
+  'sttApiKey',
 ];
 
 function clear() {
@@ -40,9 +44,9 @@ function putKey(key: string, value: unknown) {
 }
 
 function storedValue(key: string): string | undefined {
-  const row = db.prepare("SELECT value FROM settings WHERE userId = 'local' AND key = ?").get(key) as
-    | { value: string }
-    | undefined;
+  const row = db
+    .prepare("SELECT value FROM settings WHERE userId = 'local' AND key = ?")
+    .get(key) as { value: string } | undefined;
   return row?.value;
 }
 
@@ -108,6 +112,27 @@ describe('settings write validation (#233)', () => {
     const bulk = await app.request('/');
     const all = (await bulk.json()) as Record<string, unknown>;
     expect(all.openaiApiKey).toBe(true);
+  });
+
+  test('speech recognition source and protocol accept only their values', async () => {
+    expect((await putKey('sttSource', 'custom')).status).toBe(200);
+    expect((await putKey('sttSource', 'asr')).status).toBe(200);
+    expect((await putKey('sttSource', 'whisper')).status).toBe(400);
+    expect(storedValue('sttSource')).toBe(JSON.stringify('asr'));
+
+    expect((await putKey('sttProtocol', 'realtime')).status).toBe(200);
+    expect((await putKey('sttProtocol', 'http')).status).toBe(200);
+    expect((await putKey('sttProtocol', 'grpc')).status).toBe(400);
+    expect((await putKey('sttProtocol', 1)).status).toBe(400);
+    expect(storedValue('sttProtocol')).toBe(JSON.stringify('http'));
+  });
+
+  test('the speech recognition endpoint is a URL key and its key is masked', async () => {
+    expect((await putKey('sttUrl', 'ws://localhost:8000')).status).toBe(400);
+    expect((await putKey('sttUrl', 'http://localhost:8000')).status).toBe(200);
+
+    expect((await putKey('sttApiKey', 'stt-secret')).status).toBe(200);
+    expect(await (await app.request('/sttApiKey')).json()).toBe(true);
   });
 });
 

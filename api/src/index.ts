@@ -1,5 +1,6 @@
 import { Sentry } from './lib/sentry';
 import { Hono } from 'hono';
+import { websocket } from 'hono/bun';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 
@@ -201,6 +202,7 @@ startLifecycleEmailWorker();
 const config = {
   port,
   fetch: app.fetch,
+  websocket,
   idleTimeout: 120, // SSE streams for auto-evaluate need longer than the 10s default
 };
 

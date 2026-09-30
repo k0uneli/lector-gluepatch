@@ -2323,6 +2323,11 @@ const SETTING_KEYS = [
   'lmstudioUrl',
   'lmstudioModel',
   'lmstudioApiKey',
+  'sttSource',
+  'sttProtocol',
+  'sttUrl',
+  'sttModel',
+  'sttApiKey',
 ];
 
 const settingsOps: Record<string, OperationDoc> = {
@@ -2521,6 +2526,46 @@ const settingsOps: Record<string, OperationDoc> = {
       },
       '404': { description: 'Not available on this deployment.', schema: ref('Error') },
       '502': { description: 'The endpoint refused the call.', schema: ref('Error') },
+    },
+  },
+  'GET /api/stt/status': {
+    summary: 'Check the speech recognizer',
+    description:
+      'Reports the speech recognizer that voice cloze uses, and whether its endpoint answers. Self-hosted deployments only. Cloud answers `404`.',
+    tag: 'Settings',
+    responses: {
+      '200': {
+        description: 'The recognizer and its health.',
+        schema: {
+          type: 'object',
+          properties: {
+            source: { type: 'string', enum: ['asr', 'custom'] },
+            protocol: { type: 'string', enum: ['http', 'realtime'] },
+            model: { type: 'string' },
+            endpoint: { type: 'string' },
+            ok: { type: 'boolean' },
+            error: { type: 'string' },
+          },
+        },
+      },
+      '404': { description: 'Not available on this deployment.', schema: ref('Error') },
+    },
+  },
+  'GET /api/stt/stream': {
+    summary: 'Stream speech for live transcription',
+    description:
+      'Upgrades to a WebSocket. Send binary frames of 16 kHz mono PCM16 little-endian audio, then the text frame `{"type":"stop"}`. The server sends `{"type":"transcript","text","final"}` as the words arrive, and `{"type":"error","error"}` on failure. Self-hosted deployments only. Cloud answers `404`.',
+    tag: 'Settings',
+    query: [
+      {
+        name: 'language',
+        description: 'Language code of the speech. The default is the active language.',
+        schema: { type: 'string' },
+      },
+    ],
+    responses: {
+      '101': { description: 'The connection is now a WebSocket.' },
+      '404': { description: 'Not available on this deployment.', schema: ref('Error') },
     },
   },
 };

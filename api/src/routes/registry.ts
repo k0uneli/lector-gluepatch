@@ -6,6 +6,7 @@ import knownWords from './known-words';
 import studyPing from './study-ping';
 import tatoeba from './tatoeba';
 import tts from './tts';
+import stt from './stt';
 import extractUrl from './extract-url';
 import dictionary from './dictionary';
 import journal from './journal';
@@ -68,6 +69,7 @@ export const routeMounts: readonly RouteMount[] = [
   { prefix: '/api/study-ping', app: studyPing },
   { prefix: '/api/tatoeba', app: tatoeba },
   { prefix: '/api/tts', app: tts },
+  { prefix: '/api/stt', app: stt },
   { prefix: '/api/extract-url', app: extractUrl },
   { prefix: '/api/dictionary', app: dictionary },
   { prefix: '/api/journal', app: journal },
