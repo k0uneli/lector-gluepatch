@@ -876,6 +876,28 @@ const libraryOps: Record<string, OperationDoc> = {
       },
     },
   },
+  'GET /api/lessons/{id}/video': {
+    notFound: 'The lesson has no video, or the stored file is gone.',
+    summary: 'Stream the video of a lesson',
+    description:
+      'Serves an uploaded MP4 or WebM file. The endpoint honours the `Range` header and answers `206` with `Content-Range`, so a player can seek.',
+    tag: 'Library',
+    sharedParams: LANG,
+    pathParams: { id: 'Lesson identifier.' },
+    responses: {
+      '200': {
+        description: 'The complete video file.',
+        contentType: 'video/*',
+        schema: { type: 'string', format: 'binary' },
+      },
+      '206': {
+        description: 'The requested byte range.',
+        contentType: 'video/*',
+        schema: { type: 'string', format: 'binary' },
+      },
+      '416': { description: 'The range starts past the end of the file.' },
+    },
+  },
   'POST /api/lessons/{id}/retry-transcription': {
     notFound: 'No such lesson, or its transcription did not fail.',
     summary: 'Retry a failed transcription',
