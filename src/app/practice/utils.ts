@@ -1,5 +1,6 @@
 import { splitTrailingPunctuation } from '@/lib/words';
 import {
+  clozeTokens,
   clozeTokenSeparator,
   foldApostrophesFor,
   foldForComparison,
@@ -112,7 +113,7 @@ export function calculateNextReview(mastery: ClozeMasteryLevel): Date {
 
 // Calculate points for a correct answer, following Clozemaster's formula:
 //   base × (mastery% ÷ 25)
-// where base is 8 for typed answers and 4 for multiple choice. `mastery` is the
+// where base is 8 for typed and spoken answers and 4 for multiple choice. `mastery` is the
 // level reached *after* the answer (0/25/50/75/100), so leveling a card up pays
 // more. Typed answers keep a hint penalty: revealing letters scales the award
 // down by the fraction of the word given away (MC has no hints, so it's unaffected).
@@ -280,4 +281,58 @@ export function scoreDictation(diff: DictationDiff): { isPass: boolean; isPerfec
 export function calculateDictationPoints(mastery: ClozeMasteryLevel, accuracy: number): number {
   const masteryMultiplier = mastery / 25;
   return Math.max(0, Math.round(DICTATION_POINTS_BASE * masteryMultiplier * accuracy));
+}
+
+// --- Voice answers ----------------------------------------------------------
+
+function lcsLength(a: readonly string[], b: readonly string[]): number {
+  let prev = new Array<number>(b.length + 1).fill(0);
+  for (let i = a.length - 1; i >= 0; i--) {
+    const row = new Array<number>(b.length + 1).fill(0);
+    for (let j = b.length - 1; j >= 0; j--) {
+      row[j] = a[i] === b[j] ? prev[j + 1] + 1 : Math.max(prev[j], row[j + 1]);
+    }
+    prev = row;
+  }
+  return prev[0];
+}
+
+// A voice answer may be the missing word alone or the whole sentence. When the
+// answer also appears elsewhere in the sentence, the heard copy must be the one
+// that lines up with the blank, so reading the sentence with a wrong word fails.
+export function matchVoiceAnswer(
+  transcript: string,
+  card: Pick<ClozeSentence, 'sentence' | 'tokens' | 'clozeIndex' | 'clozeWord'>,
+  pack: LanguageConfig,
+): boolean {
+  const answer = normalize(splitTrailingPunctuation(card.clozeWord)[0], pack);
+  if (!answer) return false;
+
+  if (pack.script.kind === 'cjk-unspaced') {
+    return normalize(transcript, pack).replace(/\s+/g, '').includes(answer);
+  }
+
+  const heard = clozeTokens(transcript.trim(), pack)
+    .map((word) => normalize(word, pack))
+    .filter(Boolean);
+  const heardCount = heard.filter((word) => word === answer).length;
+  if (heardCount === 0) return false;
+
+  const words = resolveClozeTokens(card.sentence, card.tokens, pack).map((word) =>
+    normalize(word, pack),
+  );
+  const k = card.clozeIndex;
+  const elsewhere = words.filter((word, i) => i !== k && word === answer).length;
+  if (heardCount > elsewhere) return true;
+
+  let best = 0;
+  heard.forEach((word, i) => {
+    if (word !== answer) return;
+    const aligned =
+      lcsLength(heard.slice(0, i), words.slice(0, k)) +
+      1 +
+      lcsLength(heard.slice(i + 1), words.slice(k + 1));
+    best = Math.max(best, aligned);
+  });
+  return best === lcsLength(heard, words);
 }

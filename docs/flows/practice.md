@@ -1,6 +1,6 @@
 # Practice domain
 
-This domain runs cloze and dictation with spaced repetition (SRS). Cards live in `clozeSentences`. Mastery 100 also writes the Vocabulary domain.
+This domain runs cloze, voice cloze, and dictation with spaced repetition (SRS). Cards live in `clozeSentences`. Mastery 100 also writes the Vocabulary domain.
 
 Intervals in days come from `calculateNextReview`:
 
@@ -79,7 +79,7 @@ Blacklisted rows stay out. Order is random.
 
 ### Branches
 
-- The Type or MC mode lives in `localStorage` key `cloze-practice-mode`.
+- The Type, MC, or Voice mode lives in `localStorage` key `cloze-practice-mode`.
 - Type mode can fall back to MC mode for one card. The next card returns to type.
 - If `persistReview` fails, the round does not advance.
 - Word-state and daily-stat writes are best effort after a saved review.
@@ -116,6 +116,56 @@ Same SRS persist. The user types the full sentence after TTS.
 Pass threshold is 0.75. Surrender is always a miss. A pack with `pronunciation.audio: 'none'` hides Dictation.
 
 Tests: `e2e/dictation.spec.ts`.
+
+## Voice cloze
+
+**App domain:** Practice
+
+Selfhost only. The user says the missing word or the whole sentence. The transcript shows each word as it arrives.
+
+```mermaid
+sequenceDiagram
+  actor User
+  participant Card as VoiceAnswer
+  participant Rec as startRecognition
+  participant API as stt.ts
+  participant STT as Speech model
+
+  User->>Card: Click the mic or press Space
+  Card->>Rec: startRecognition(language)
+  Rec->>API: WebSocket /api/stt/stream
+  loop While the user speaks
+    Rec->>API: PCM16 16 kHz frames
+    API->>STT: realtime append, or the whole clip again
+    STT-->>API: delta or transcript
+    API-->>Card: transcript so far
+    Card->>Card: matchVoiceAnswer
+  end
+  Card->>Card: Match stops the mic
+  Card->>Card: onAnswer, then recordAnswer
+```
+
+| Role | Path | Function |
+| --- | --- | --- |
+| Page | `src/app/practice/page.tsx` | `handleVoiceAnswer`, `handleTypeInstead`, `recordAnswer` |
+| Card | `src/app/practice/components/VoiceAnswer/index.tsx` | `VoiceAnswer` |
+| Grade | `src/app/practice/utils.ts` | `matchVoiceAnswer` |
+| Client | `src/lib/stt/index.ts` | `startRecognition`, `isVoiceInputSupported` |
+| Audio | `src/lib/stt/audio.ts` | `Downsampler`, `Endpointer` |
+| API | `api/src/routes/stt.ts` | `GET /stream`, `GET /status` |
+| Sessions | `api/src/lib/stt.ts` | `resolveSttConfig`, `HttpSttSession`, `RealtimeSttSession` |
+
+### Branches
+
+- Source `asr` uses the `ASR_*` env of audio import. It sends the whole clip to `/v1/audio/transcriptions` again every 400 ms.
+- Source `custom` with protocol `realtime` relays to vLLM `/v1/realtime`. Protocol `http` works like `asr`.
+- A match on a partial transcript is accepted at once. When the answer word also occurs in another position, the heard word must align with the blank.
+- An empty transcript does not use an attempt. The third wrong transcript is a miss. Give up is a miss.
+- Type instead switches only this card to typing.
+- The endpointer stops the mic after 1.5 s of silence after speech, 8 s with no speech, or 15 s in total. The API keeps at most 30 s of audio.
+- Cloud answers `404` on `/api/stt/*`. The Voice mode button does not show.
+
+Tests: `e2e/voice-cloze.spec.ts`. Unit: `src/app/practice/__tests__/voice.test.ts`, `src/lib/stt/audio.test.ts`, `api/src/lib/stt.test.ts`, `api/src/routes/stt.test.ts`.
 
 ## Blacklist sentence
 

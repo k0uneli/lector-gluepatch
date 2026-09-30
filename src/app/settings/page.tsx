@@ -9,6 +9,7 @@ import Timezone from './components/Timezone';
 import ThemeSettings from './components/ThemeSettings';
 import AnkiSettings from './components/AnkiSettings';
 import TTSSettings from './components/TTSSettings';
+import VoiceRecognitionSettings from './components/VoiceRecognitionSettings';
 import LLMSettings from './components/LLMSettings';
 import PracticeSettings from './components/PracticeSettings';
 import ProseSettings from './components/ProseSettings';
@@ -32,6 +33,7 @@ export default function SettingsPage() {
         {lectorMode() === 'cloud' ? <BYOKSettings /> : <LLMSettings />}
         <AnkiSettings />
         <TTSSettings />
+        {lectorMode() === 'selfhost' && <VoiceRecognitionSettings />}
         <ThemeSettings />
         <Timezone />
         <TwoFactorSettings />

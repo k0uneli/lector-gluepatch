@@ -56,6 +56,26 @@ flowchart TD
 - A valid BYOK key raises AI abuse caps. Product caps stay on the plan.
 - OpenAI-compatible presets only fill the URL. The API sees one provider.
 
+## Configure voice recognition
+
+**App domain:** Settings
+
+Selfhost only. Voice cloze uses the speech model set here.
+
+| Role | Path | Function |
+| --- | --- | --- |
+| UI | `src/app/settings/components/VoiceRecognitionSettings/index.tsx` | VoiceRecognitionSettings |
+| Status | `api/src/routes/stt.ts` | `GET /status` |
+| Config | `api/src/lib/stt.ts` | `resolveSttConfig`, `checkSttHealth` |
+| Keys | `api/src/lib/settings-keys.ts` | `validateSettingWrite` |
+
+### Branches
+
+- `sttSource` is `asr` (default) or `custom`. `asr` reads `ASR_URL`, `ASR_MODEL`, and `ASR_API_KEY`.
+- `custom` reads `sttUrl`, `sttProtocol` (`realtime` default, or `http`), `sttModel`, and `sttApiKey`.
+- `sttApiKey` is sensitive. A read returns `true`, and the takeout leaves it out.
+- The status check calls `GET /v1/models` on the endpoint.
+
 ## API tokens
 
 **App domain:** Settings

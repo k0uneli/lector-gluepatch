@@ -6,8 +6,8 @@ import type {
 } from './types';
 
 // Speaches / faster-whisper-server's default port; override with ASR_URL.
-const DEFAULT_URL = 'http://localhost:8000';
-const DEFAULT_MODEL = 'whisper-large-v3';
+export const DEFAULT_ASR_URL = 'http://localhost:8000';
+export const DEFAULT_ASR_MODEL = 'whisper-large-v3';
 // Transcription is a background job, so the timeout only needs to beat the
 // slowest realistic run (a podcast-length file on a cold-loaded local model),
 // not feel snappy. 30 min is generous without letting a hung socket pin the
@@ -44,8 +44,8 @@ export class OpenAIWhisperProvider implements TranscriptionProvider {
   private timeoutMs: number;
 
   constructor(options?: OpenAIWhisperOptions) {
-    this.baseUrl = (options?.baseUrl || DEFAULT_URL).replace(/\/$/, '');
-    this.model = options?.model || DEFAULT_MODEL;
+    this.baseUrl = (options?.baseUrl || DEFAULT_ASR_URL).replace(/\/$/, '');
+    this.model = options?.model || DEFAULT_ASR_MODEL;
     this.apiKey = options?.apiKey;
     this.timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxBytes = options?.maxBytes;

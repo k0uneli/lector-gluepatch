@@ -67,3 +67,18 @@ On billed cloud plans, two limits apply. Self-host ignores them.
 - `maxAudioStorageBytes`: total audio on disk. Cloud is 2 GiB. Plus is 10 GiB.
 
 Both are tunable through `LECTOR_PLAN_LIMITS`.
+
+## Voice cloze
+
+Voice mode in cloze practice turns speech into text while the learner speaks. It is for self-hosted installs. Cloud does not serve it.
+
+The browser streams microphone audio to `GET /api/stt/stream`, a WebSocket on the API. A reverse proxy in front of the API must pass WebSocket upgrades. The microphone needs a secure page: HTTPS or `localhost`.
+
+Settings → Voice Recognition selects the speech model:
+
+- **Audio import model.** This is the default. It uses the same `ASR_URL`, `ASR_MODEL`, and `ASR_API_KEY` as audio transcription. A Whisper server gives one answer for each request. Lector sends the clip again approximately every 0.4 seconds, so the words appear in steps.
+- **Custom endpoint.** Set a base URL, a protocol, a model name, and an optional API key. The API key goes to the server as a Bearer token.
+  - **Realtime** uses the vLLM realtime protocol at `/v1/realtime`. The model sends each word when it hears it. Use it with a streaming model, for example [Voxtral Mini 4B Realtime](https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602) on vLLM.
+  - **HTTP** uses an OpenAI-compatible `POST /v1/audio/transcriptions`, for example a second Whisper server.
+
+The HTTP protocol sends the language hint. The realtime protocol does not, so the model must detect the language.

@@ -33,3 +33,9 @@ export const DICTATION_MAX_REPLAYS = 3;
 
 // Playback speed multipliers offered during dictation (× the normal TTS rate).
 export const DICTATION_SPEEDS = [1, 0.75, 0.5] as const;
+
+// --- Voice mode -------------------------------------------------------------
+
+// Heard-but-wrong attempts before a voice answer counts as a miss. An empty
+// transcript does not use one up.
+export const VOICE_MAX_ATTEMPTS = 3;

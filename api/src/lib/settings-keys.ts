@@ -23,6 +23,7 @@ export const SENSITIVE_KEYS = new Set([
   'claudeOauthToken',
   'lmstudioApiKey',
   'openaiApiKey',
+  'sttApiKey',
 ]);
 
 export const REDACTION_SENTINEL = '__REDACTED__';
@@ -38,13 +39,25 @@ const SETTING_VALUE_BYTE_LIMITS: Record<string, number> = {
   // A list of registry codes with no repeats, so the whole registry is the most
   // it can hold.
   enabledLanguages: Buffer.byteLength(JSON.stringify(Object.keys(LANGUAGES)), 'utf8'),
+  sttSource: Buffer.byteLength(JSON.stringify('custom'), 'utf8'),
+  sttProtocol: Buffer.byteLength(JSON.stringify('realtime'), 'utf8'),
+  // Well above real endpoints, model ids and bearer keys.
+  sttUrl: 1024,
+  sttModel: 256,
+  sttApiKey: 2048,
 };
 
 export function settingValueByteLimit(key: string): number {
   return SETTING_VALUE_BYTE_LIMITS[key] ?? MAX_SETTING_VALUE_BYTES;
 }
 
-export const URL_SETTING_KEYS = new Set(['openaiUrl', 'ankiConnectUrl', 'apfelUrl', 'lmstudioUrl']);
+export const URL_SETTING_KEYS = new Set([
+  'openaiUrl',
+  'ankiConnectUrl',
+  'apfelUrl',
+  'lmstudioUrl',
+  'sttUrl',
+]);
 
 export const KNOWN_SETTING_KEYS = new Set([
   // Core
@@ -66,6 +79,13 @@ export const KNOWN_SETTING_KEYS = new Set([
   // default) or 'addon' (server-side queue + Lector Sync addon — forced in
   // cloud, opt-in for self-hosters whose Lector is HTTPS/remote).
   'ankiTransport',
+  // Voice cloze speech recognition: 'asr' reuses the audio-import ASR env,
+  // 'custom' reads the sttUrl/sttProtocol/sttModel/sttApiKey keys.
+  'sttSource',
+  'sttProtocol',
+  'sttUrl',
+  'sttModel',
+  'sttApiKey',
   // Legacy provider keys — no longer written by the UI, but db.ts boot
   // migrations still read them and older DBs/CLI flows may round-trip them.
   'ollamaModel',
@@ -82,6 +102,12 @@ export const KNOWN_SETTING_KEYS = new Set([
  * "unset the endpoint" (the settings UI writes '' to clear a field).
  */
 const ANKI_TRANSPORTS = new Set(['ankiconnect', 'addon']);
+export const STT_SOURCES = ['asr', 'custom'] as const;
+export const STT_PROTOCOLS = ['http', 'realtime'] as const;
+const STT_ENUMS: Record<string, ReadonlySet<string>> = {
+  sttSource: new Set<string>(STT_SOURCES),
+  sttProtocol: new Set<string>(STT_PROTOCOLS),
+};
 
 export function validateSettingWrite(key: string, value: unknown): string | null {
   if (!KNOWN_SETTING_KEYS.has(key)) return `Unknown setting key: ${key}`;
@@ -114,6 +140,12 @@ export function validateSettingWrite(key: string, value: unknown): string | null
   if (key === 'ankiTransport' && value !== '' && value !== null) {
     if (typeof value !== 'string' || !ANKI_TRANSPORTS.has(value)) {
       return "ankiTransport must be 'ankiconnect' or 'addon'";
+    }
+  }
+  const sttValues = STT_ENUMS[key];
+  if (sttValues && value !== '' && value !== null) {
+    if (typeof value !== 'string' || !sttValues.has(value)) {
+      return `${key} must be one of: ${[...sttValues].join(', ')}`;
     }
   }
   if (URL_SETTING_KEYS.has(key) && value !== '' && value !== null) {

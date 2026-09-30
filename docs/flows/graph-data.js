@@ -260,6 +260,19 @@
     summary: "Same SRS persist. User types the full sentence after TTS. Pass threshold is 0.75.",
     steps: ["file:practice-page", "fn:speak", "fn:persistReview", "route:cloze-review"],
   });
+  N("flow:voice-cloze", "flow", "Voice cloze", {
+    domain: "practice",
+    md: "practice.md#voice-cloze",
+    summary: "Selfhost only. Mic audio streams over a WebSocket to the API, which relays it to the ASR server or a custom realtime model. A heard answer grades as correct.",
+    steps: [
+      "file:voice-answer",
+      "fn:startRecognition",
+      "route:stt-stream",
+      "fn:matchVoiceAnswer",
+      "fn:persistReview",
+      "route:cloze-review",
+    ],
+  });
   N("flow:blacklist", "flow", "Blacklist sentence", {
     domain: "practice",
     md: "practice.md#blacklist-sentence",
@@ -388,6 +401,12 @@
     summary: "Settings page writes one key at a time through data-layer to PUT /api/settings/:key.",
     steps: ["file:settings-page", "fn:setSetting", "route:settings-put", "table:settings"],
   });
+  N("flow:configure-stt", "flow", "Configure voice recognition", {
+    domain: "settings",
+    md: "settings.md#configure-voice-recognition",
+    summary: "Selfhost only. The audio import model (ASR env) or a custom endpoint. GET /api/stt/status checks it.",
+    steps: ["file:voice-recognition-settings", "fn:setSetting", "route:stt-status", "file:stt-lib"],
+  });
   N("flow:configure-llm", "flow", "Configure LLM", {
     domain: "settings",
     md: "settings.md#configure-llm",
@@ -484,6 +503,8 @@
   N("file:use-cloze-round", "file", "use-cloze-round.ts", { path: "src/app/practice/use-cloze-round.ts", domain: "practice" });
   N("file:persist-review", "file", "persist-review.ts", { path: "src/app/practice/persist-review.ts", domain: "practice" });
   N("file:practice-utils", "file", "practice/utils.ts", { path: "src/app/practice/utils.ts", domain: "practice" });
+  N("file:voice-answer", "file", "VoiceAnswer", { path: "src/app/practice/components/VoiceAnswer/index.tsx", domain: "practice" });
+  N("file:stt-client", "file", "lib/stt", { path: "src/lib/stt/index.ts", domain: "practice" });
   N("file:journal-page", "file", "Journal page", { path: "src/app/journal/page.tsx", domain: "journal" });
   N("file:correction-view", "file", "CorrectionView", { path: "src/app/journal/components/CorrectionView.tsx", domain: "journal" });
   N("file:chat-widget", "file", "ChatWidget", { path: "src/components/ChatWidget/index.tsx", domain: "tutor" });
@@ -517,6 +538,10 @@
   N("file:language-selector", "file", "LanguageSelector", { path: "src/components/LanguageSelector/index.tsx", domain: "onboarding" });
   N("file:languages-settings", "file", "LanguagesSettings", { path: "src/app/settings/components/LanguagesSettings/index.tsx", domain: "settings" });
   N("file:llm-settings", "file", "LLMSettings", { path: "src/app/settings/components/LLMSettings/index.tsx", domain: "settings" });
+  N("file:voice-recognition-settings", "file", "VoiceRecognitionSettings", {
+    path: "src/app/settings/components/VoiceRecognitionSettings/index.tsx",
+    domain: "settings",
+  });
   N("file:byok-settings", "file", "BYOKSettings", { path: "src/app/settings/components/BYOKSettings.tsx", domain: "settings" });
   N("file:api-tokens", "file", "APITokens", { path: "src/app/settings/components/APITokens/index.tsx", domain: "settings" });
   N("file:delete-account", "file", "DeleteAccount", { path: "src/app/settings/components/DeleteAccount/index.tsx", domain: "settings" });
@@ -549,6 +574,8 @@
   N("file:route-vocab", "file", "vocab.ts", { path: "api/src/routes/vocab.ts", domain: "vocabulary" });
   N("file:route-known-words", "file", "known-words.ts", { path: "api/src/routes/known-words.ts", domain: "vocabulary" });
   N("file:route-cloze", "file", "cloze.ts", { path: "api/src/routes/cloze.ts", domain: "practice" });
+  N("file:route-stt", "file", "stt.ts", { path: "api/src/routes/stt.ts", domain: "practice" });
+  N("file:stt-lib", "file", "lib/stt.ts", { path: "api/src/lib/stt.ts", domain: "practice" });
   N("file:route-journal", "file", "journal.ts", { path: "api/src/routes/journal.ts", domain: "journal" });
   N("file:route-chat", "file", "chat.ts", { path: "api/src/routes/chat.ts", domain: "tutor" });
   N("file:route-explain", "file", "explain.ts", { path: "api/src/routes/explain.ts", domain: "tutor" });
@@ -619,6 +646,8 @@
   N("fn:practice-startRoundWith", "fn", "startRoundWith", { path: "src/app/practice/page.tsx" });
   N("fn:seedSentenceBank", "fn", "seedSentenceBank", { path: "src/lib/data-layer.ts" });
   N("fn:checkAnswer", "fn", "checkAnswer", { path: "src/app/practice/utils.ts" });
+  N("fn:matchVoiceAnswer", "fn", "matchVoiceAnswer", { path: "src/app/practice/utils.ts" });
+  N("fn:startRecognition", "fn", "startRecognition", { path: "src/lib/stt/index.ts" });
   N("fn:calculateNextReview", "fn", "calculateNextReview", { path: "src/app/practice/utils.ts" });
   N("fn:commitRoundReview", "fn", "commitRoundReview", { path: "src/app/practice/use-cloze-round.ts" });
   N("fn:persistReview", "fn", "persistReview", { path: "src/app/practice/persist-review.ts" });
@@ -705,6 +734,8 @@
   N("route:chat-post", "route", "POST /api/chat", { path: "api/src/routes/chat.ts" });
   N("route:explain-post", "route", "POST /api/explain", { path: "api/src/routes/explain.ts" });
   N("route:tts-post", "route", "POST /api/tts", { path: "api/src/routes/tts.ts" });
+  N("route:stt-stream", "route", "GET /api/stt/stream (WebSocket)", { path: "api/src/routes/stt.ts" });
+  N("route:stt-status", "route", "GET /api/stt/status", { path: "api/src/routes/stt.ts" });
   N("route:anki-queue", "route", "POST /api/anki/queue", { path: "api/src/routes/anki.ts" });
   N("route:anki-pending", "route", "GET /api/anki/pending", { path: "api/src/routes/anki.ts" });
   N("route:anki-ack", "route", "POST /api/anki/ack", { path: "api/src/routes/anki.ts" });
@@ -831,7 +862,7 @@
     "flow:cache-translation",
   ]);
   domainFlows("vocabulary", ["flow:save-vocab", "flow:vocab-list", "flow:known-word-import"]);
-  domainFlows("practice", ["flow:practice-word", "flow:dictation", "flow:blacklist"]);
+  domainFlows("practice", ["flow:practice-word", "flow:dictation", "flow:voice-cloze", "flow:blacklist"]);
   domainFlows("journal", ["flow:journal-submit", "flow:journal-draft"]);
   domainFlows("tutor", ["flow:tutor-chat", "flow:cloze-explain"]);
   domainFlows("listen", ["flow:speak-word", "flow:listen-along", "flow:youtube-captions"]);
@@ -839,7 +870,13 @@
   domainFlows("onboarding", ["flow:language-setup", "flow:add-language"]);
   domainFlows("stats", ["flow:daily-stats", "flow:fluency-radar"]);
   domainFlows("auth", ["flow:sign-in", "flow:sign-up", "flow:lifecycle-email", "flow:session-gate"]);
-  domainFlows("settings", ["flow:save-settings", "flow:configure-llm", "flow:api-tokens", "flow:delete-account"]);
+  domainFlows("settings", [
+    "flow:save-settings",
+    "flow:configure-llm",
+    "flow:configure-stt",
+    "flow:api-tokens",
+    "flow:delete-account",
+  ]);
   domainFlows("data", ["flow:export-data", "flow:restore-data"]);
   domainFlows("billing", ["flow:subscribe", "flow:entitlements", "flow:plan-change"]);
   domainFlows("admin", ["flow:admin-list", "flow:admin-support", "flow:impersonate"]);
@@ -1093,6 +1130,16 @@
   edge("flow:dictation", "file:practice-page", "starts");
   edge("flow:dictation", "fn:speak", "calls");
   edge("flow:dictation", "fn:persistReview", "calls");
+  edge("flow:voice-cloze", "file:practice-page", "starts");
+  edge("file:practice-page", "file:voice-answer", "opens");
+  edge("file:voice-answer", "fn:startRecognition", "calls");
+  edge("file:voice-answer", "fn:matchVoiceAnswer", "calls");
+  edge("fn:startRecognition", "file:stt-client", "in");
+  edge("fn:startRecognition", "route:stt-stream", "http");
+  edge("fn:matchVoiceAnswer", "file:practice-utils", "in");
+  edge("route:stt-stream", "file:route-stt", "in");
+  edge("file:route-stt", "file:stt-lib", "calls");
+  edge("flow:voice-cloze", "fn:persistReview", "calls");
   edge("flow:blacklist", "route:cloze-put", "http");
   edge("route:cloze-put", "table:clozeSentences", "writes");
 
@@ -1278,6 +1325,12 @@
   edge("route:settings-get", "file:route-settings", "in");
   edge("route:settings-get", "table:settings", "reads");
   edge("flow:configure-llm", "file:llm-settings", "starts");
+  edge("flow:configure-stt", "file:voice-recognition-settings", "starts");
+  edge("file:settings-page", "file:voice-recognition-settings", "opens");
+  edge("file:voice-recognition-settings", "fn:setSetting", "calls");
+  edge("file:voice-recognition-settings", "route:stt-status", "http");
+  edge("route:stt-status", "file:route-stt", "in");
+  edge("flow:configure-stt", "flow:voice-cloze", "then");
   edge("file:settings-page", "file:llm-settings", "opens");
   edge("file:settings-page", "file:byok-settings", "opens");
   edge("file:llm-settings", "fn:setSetting", "calls");
@@ -1388,6 +1441,7 @@
   edge("file:admin-page", "layer:ui", "in");
   edge("file:route-admin", "layer:routes", "in");
   edge("file:route-billing", "layer:routes", "in");
+  edge("file:route-stt", "layer:routes", "in");
   edge("file:accounts", "layer:lib", "in");
 
   global.LECTOR_FLOW_GRAPH = {

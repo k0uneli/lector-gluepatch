@@ -4,7 +4,7 @@ import { ROUND_SIZES } from './constants';
 // Fuzzy match status for live feedback
 export type FuzzyStatus = 'empty' | 'match' | 'partial' | 'wrong';
 export type PracticeState = 'setup' | 'loading' | 'practicing' | 'feedback' | 'complete' | 'empty';
-export type PracticeMode = 'type' | 'mc';
+export type PracticeMode = 'type' | 'mc' | 'voice';
 
 // Top-level practice format. Cloze (fill in the blanked word — Type/MC) vs
 // Dictation (hear the whole sentence, type it back). Both draw from the same
