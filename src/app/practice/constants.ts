@@ -1,3 +1,4 @@
+import type { ClozeDrill } from '@/lib/languages';
 import { ClozeCollection } from '@/types';
 
 export const ANKI_CLOZE_DECK_SETTING_KEY = 'lector-anki-cloze-deck';
@@ -10,6 +11,19 @@ export const COLLECTION_LABELS: Record<string, string> = {
 };
 
 export const VISIBLE_COLLECTIONS: ClozeCollection[] = ['top500', 'top1000', 'top2000'];
+
+// --- Inflection drills -----------------------------------------------------
+
+export const CLOZE_DRILL_SETTING_KEY = 'lector-cloze-drill';
+
+export const CLOZE_DRILL_OPTIONS: Record<ClozeDrill, { label: string; description: string }> = {
+  word: { label: 'Whole word', description: 'Type the missing word' },
+  ending: { label: 'Ending', description: 'The stem is shown. Add the case or verb ending' },
+  inflect: {
+    label: 'Base form',
+    description: 'The dictionary form is shown. Write the form the sentence needs',
+  },
+};
 
 // --- Dictation mode ---------------------------------------------------------
 

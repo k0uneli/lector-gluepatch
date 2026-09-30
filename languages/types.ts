@@ -268,6 +268,17 @@ export interface MorphologyConfig {
   maxPrefixes?: number;
 }
 
+/** Enables the Ending and Base form cloze drills. Both need the pack's dictionary. */
+export interface InflectionConfig {
+  /**
+   * Endings that split a form into stem + ending, written as the language
+   * writes them. Matching folds case, and marks under `fold-marks`.
+   */
+  endings: readonly string[];
+  /** Endings of dictionary forms. A form aligns with its lemma where both leftovers are endings. */
+  lemmaEndings: readonly string[];
+}
+
 export interface LanguageConfig {
   /** English name, e.g. "German". */
   name: string;
@@ -295,4 +306,5 @@ export interface LanguageConfig {
   script: ScriptConfig;
   /** How the lookup reaches a key when the written form is not one (ko). */
   morphology?: MorphologyConfig;
+  inflection?: InflectionConfig;
 }

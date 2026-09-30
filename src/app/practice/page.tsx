@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { CheckCircle, Star } from 'lucide-react';
+import { CheckCircle, ChevronDown, Star } from 'lucide-react';
 import { DeckShuffle } from '@/components/Loaders';
 import TranslationDrawer, { TranslationDrawerSlot } from '@/components/TranslationDrawer';
 import {
@@ -31,16 +31,22 @@ import {
   graphemeSplit,
   isValidLanguageCode,
   resolveClozeTokens,
+  supportsInflectionDrills,
   tokenizeWords,
+  CLOZE_DRILLS,
+  type ClozeDrill,
 } from '@/lib/languages';
 import {
   calculateDictationPoints,
   calculatePoints,
+  buildInflectionOptions,
   buildMultipleChoiceOptions,
   checkAnswer,
+  clozeTarget,
   diffDictation,
   getFuzzyStatus,
   normalize,
+  optionLabel,
   scoreDictation,
 } from './utils';
 import type {
@@ -54,6 +60,8 @@ import type {
 } from './types';
 import { useClozeRound } from './use-cloze-round';
 import {
+  CLOZE_DRILL_OPTIONS,
+  CLOZE_DRILL_SETTING_KEY,
   COLLECTION_LABELS,
   PRACTICE_FORMAT_SETTING_KEY,
   ROUND_SIZES,
@@ -62,6 +70,13 @@ import {
 import BlacklistSentence from './components/BlacklistSentence';
 import { Button } from '@/components/ui/button';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { SETTINGS_KEYS } from '@/app/settings/constants';
 import EmptyState from './components/EmptyState';
 import PageHeader from '@/components/PageHeader';
@@ -128,6 +143,8 @@ export default function PracticePage() {
   const [practiceFormat, setPracticeFormat] = useState<PracticeFormat>('cloze');
   const [practiceMode, setPracticeMode] = useState<PracticeMode>('type');
   const [roundType, setRoundType] = useState<RoundType>('new');
+  const [clozeDrill, setClozeDrill] = useState<ClozeDrill>('word');
+  const [drillsAvailable, setDrillsAvailable] = useState(false);
 
   // Dictation result (the graded diff), shown on the feedback screen
   const [dictationResult, setDictationResult] = useState<DictationResult | null>(null);
@@ -220,6 +237,13 @@ export default function PracticePage() {
         if (savedFormat === 'cloze' || (savedFormat === 'dictation' && hasAudio())) {
           setPracticeFormat(savedFormat);
         }
+
+        const canDrill = supportsInflectionDrills(getActivePack());
+        setDrillsAvailable(canDrill);
+        const savedDrill = localStorage.getItem(CLOZE_DRILL_SETTING_KEY);
+        if (canDrill && (savedDrill === 'ending' || savedDrill === 'inflect')) {
+          setClozeDrill(savedDrill);
+        }
       }
 
       // Respect the "hide translation by default" setting (Alt+T toggles live)
@@ -239,6 +263,11 @@ export default function PracticePage() {
   const handleSetPracticeMode = useCallback((mode: PracticeMode) => {
     setPracticeMode(mode);
     localStorage.setItem('cloze-practice-mode', mode);
+  }, []);
+
+  const handleSetClozeDrill = useCallback((drill: ClozeDrill) => {
+    setClozeDrill(drill);
+    localStorage.setItem(CLOZE_DRILL_SETTING_KEY, drill);
   }, []);
 
   // Save practice format (cloze vs dictation) to localStorage when it changes
@@ -338,12 +367,16 @@ export default function PracticePage() {
 
   // Generate MC options when current sentence or queue changes
   const generateMcOptionsForSentence = useCallback(
-    (sentence: ClozeSentence, sentenceQueue: ClozeSentence[]) => {
-      const { options, correctIndex } = buildMultipleChoiceOptions(
-        sentence.clozeWord,
-        sentenceQueue,
-        onboardingDistractorWordsRef.current,
-      );
+    (sentence: ClozeSentence, sentenceQueue: ClozeSentence[], drill: ClozeDrill) => {
+      const forms = drill === 'word' ? [] : (sentence.inflection?.distractors ?? []);
+      const { options, correctIndex } =
+        forms.length > 0
+          ? buildInflectionOptions(sentence.clozeWord, forms, getActivePack())
+          : buildMultipleChoiceOptions(
+              sentence.clozeWord,
+              sentenceQueue,
+              onboardingDistractorWordsRef.current,
+            );
       setMcOptions(options);
       setMcCorrectIdx(correctIndex);
       setMcSelected(null);
@@ -378,7 +411,7 @@ export default function PracticePage() {
       if (activeFormat === 'cloze') {
         // Generate MC options if in MC mode
         if (activeMode === 'mc') {
-          generateMcOptionsForSentence(next.sentence, sentenceQueue);
+          generateMcOptionsForSentence(next.sentence, sentenceQueue, clozeDrill);
         }
 
         // Focus input after state update (only in type mode)
@@ -387,7 +420,7 @@ export default function PracticePage() {
         }
       }
     },
-    [practiceFormat, practiceMode, generateMcOptionsForSentence, clearAnswerTimer],
+    [practiceFormat, practiceMode, clozeDrill, generateMcOptionsForSentence, clearAnswerTimer],
   );
 
   const presentRound = useCallback(
@@ -472,11 +505,12 @@ export default function PracticePage() {
 
       try {
         let sentences: ClozeSentence[];
+        const drill = practiceFormat === 'cloze' ? clozeDrill : 'word';
 
         if (type === 'review') {
-          sentences = await getClozeSentencesByCollection(collection, size, []);
+          sentences = await getClozeSentencesByCollection(collection, size, [], drill);
         } else {
-          sentences = await getNewSentencesByCollection(collection, size, []);
+          sentences = await getNewSentencesByCollection(collection, size, [], drill);
         }
 
         // Shuffle
@@ -495,7 +529,19 @@ export default function PracticePage() {
         setState('complete');
       }
     },
-    [beginRound, presentRound, setState],
+    [beginRound, presentRound, setState, practiceFormat, clozeDrill],
+  );
+
+  const target = useMemo(
+    () =>
+      current
+        ? clozeTarget(
+            current.sentence,
+            practiceFormat === 'cloze' ? clozeDrill : 'word',
+            getActivePack(),
+          )
+        : null,
+    [current, practiceFormat, clozeDrill],
   );
 
   // Start a round using current state values
@@ -507,8 +553,8 @@ export default function PracticePage() {
   // next character" must never split a base letter from its combining marks
   // or tear a surrogate pair.
   const handleHint = useCallback(() => {
-    if (!current) return;
-    const correctWord = graphemeSplit(normalize(current.sentence.clozeWord));
+    if (!target) return;
+    const correctWord = graphemeSplit(normalize(target.answer));
     const currentInput = graphemeSplit(normalize(userAnswer));
 
     // Find how many leading characters are already correct
@@ -526,7 +572,7 @@ export default function PracticePage() {
     setHintLetters(hintLetters + 1);
     setUserAnswer(correctWord.slice(0, revealCount).join(''));
     inputRef.current?.focus();
-  }, [current, hintLetters, userAnswer]);
+  }, [target, hintLetters, userAnswer]);
 
   // Record a completed cloze answer: decide the mastery and points, then show
   // feedback. Shared by typed answers and multiple choice — the only
@@ -534,7 +580,7 @@ export default function PracticePage() {
   // pause/sound) and the points base (8 for typing, 4 for MC), passed via `mode`.
   const recordAnswer = useCallback(
     async (isCorrect: boolean, submittedAnswer: string, mode: PracticeMode) => {
-      if (!current) return;
+      if (!current || !target) return;
 
       const previousMastery = current.sentence.masteryLevel;
       const newMastery: ClozeMasteryLevel = isCorrect
@@ -545,12 +591,7 @@ export default function PracticePage() {
       // was first missed this round. Points scale with the mastery just reached.
       const earnedPoints =
         isCorrect && !isRetryPhase
-          ? calculatePoints(
-              newMastery,
-              hintLetters,
-              graphemeLength(normalize(current.sentence.clozeWord)),
-              mode,
-            )
+          ? calculatePoints(newMastery, hintLetters, graphemeLength(normalize(target.answer)), mode)
           : 0;
 
       const committed = await commitReview({ isCorrect, earnedPoints, newMastery });
@@ -587,6 +628,7 @@ export default function PracticePage() {
         }
       }
 
+      const inflection = current.sentence.inflection;
       setFeedbackData({
         isCorrect,
         correctWord: splitTrailingPunctuation(current.sentence.clozeWord)[0],
@@ -595,6 +637,10 @@ export default function PracticePage() {
         points: earnedPoints,
         newMastery,
         previousMastery,
+        grammar:
+          clozeDrill !== 'word' && inflection
+            ? `${inflection.description} of ${inflection.lemma}`
+            : undefined,
       });
 
       showFeedback();
@@ -605,6 +651,8 @@ export default function PracticePage() {
     },
     [
       current,
+      target,
+      clozeDrill,
       hintLetters,
       isRetryPhase,
       commitReview,
@@ -669,10 +717,10 @@ export default function PracticePage() {
 
   // Handle answer submission (type mode)
   const handleSubmit = async () => {
-    if (!current || !userAnswer.trim() || submittingRef.current) return;
+    if (!current || !target || !userAnswer.trim() || submittingRef.current) return;
     submittingRef.current = true;
 
-    const answer = userAnswer.trim();
+    const answer = target.prefix + userAnswer.trim();
     const isCorrect = checkAnswer(answer, current.sentence.clozeWord, getActivePack());
     if (isCorrect) {
       playCorrectSound();
@@ -1062,6 +1110,46 @@ export default function PracticePage() {
                     </div>
                   </div>
                 )}
+                {practiceFormat === 'cloze' && drillsAvailable && (
+                  <div>
+                    <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                      Blank
+                    </label>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={<Button variant="secondary" />}
+                        data-testid="cloze-drill"
+                        aria-label={`Blank: ${CLOZE_DRILL_OPTIONS[clozeDrill].label}`}
+                      >
+                        {CLOZE_DRILL_OPTIONS[clozeDrill].label}
+                        <ChevronDown />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-64">
+                        <DropdownMenuRadioGroup
+                          value={clozeDrill}
+                          onValueChange={(value) => handleSetClozeDrill(value as ClozeDrill)}
+                        >
+                          {CLOZE_DRILLS.map((drill) => (
+                            <DropdownMenuRadioItem
+                              key={drill}
+                              value={drill}
+                              closeOnClick
+                              data-testid={`cloze-drill-${drill}`}
+                              className="flex-col items-start gap-0"
+                            >
+                              <span className="font-medium">
+                                {CLOZE_DRILL_OPTIONS[drill].label}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {CLOZE_DRILL_OPTIONS[drill].description}
+                              </span>
+                            </DropdownMenuRadioItem>
+                          ))}
+                        </DropdownMenuRadioGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                )}
               </div>
 
               {/* Start button */}
@@ -1165,6 +1253,7 @@ export default function PracticePage() {
             {/* Practice state — cloze */}
             {state === 'practicing' &&
               current &&
+              target &&
               practiceFormat === 'cloze' &&
               (() => {
                 const questionMode: PracticeMode = mcFallback
@@ -1172,11 +1261,7 @@ export default function PracticePage() {
                   : typeFallback
                     ? 'type'
                     : practiceMode;
-                const fuzzyStatus = getFuzzyStatus(
-                  userAnswer,
-                  current.sentence.clozeWord,
-                  getActivePack(),
-                );
+                const fuzzyStatus = getFuzzyStatus(userAnswer, target.answer, getActivePack());
                 const inputColorClass = {
                   empty: 'border-[var(--clay)] bg-[color-mix(in_srgb,var(--clay)_14%,var(--card))]',
                   match: 'border-primary bg-[color-mix(in_srgb,var(--primary)_14%,var(--card))]',
@@ -1194,9 +1279,10 @@ export default function PracticePage() {
                 const wordGap = clozeTokenSeparator(current.sentence.sentence, words);
                 // The cloze token can carry trailing punctuation (e.g. "huis.") —
                 // render it after the input/blank so it stays visible.
-                const [clozeBase, clozePunct] = splitTrailingPunctuation(
+                const [, clozePunct] = splitTrailingPunctuation(
                   words[current.sentence.clozeIndex] ?? '',
                 );
+                const blankWidth = `${Math.max(graphemeLength(target.answer) * 0.7, target.prefix ? 2 : 4)}ch`;
 
                 // Re-used in both the type and MC shortcut-hint rows below.
                 const translationHint = (
@@ -1216,10 +1302,16 @@ export default function PracticePage() {
                       <div className="mb-4 flex items-center justify-between">
                         <span className="text-sm font-medium text-muted-foreground">
                           {questionMode === 'mc'
-                            ? 'Choose the correct word'
+                            ? target.prefix || target.prompt
+                              ? 'Choose the correct form'
+                              : 'Choose the correct word'
                             : questionMode === 'voice'
                               ? 'Say the missing word'
-                              : 'Fill in the blank'}
+                              : target.prefix
+                                ? 'Fill in the ending'
+                                : target.prompt
+                                  ? 'Put the word in the right form'
+                                  : 'Fill in the blank'}
                         </span>
                         {!onboardingMode && (
                           <BlacklistSentence
@@ -1242,6 +1334,9 @@ export default function PracticePage() {
                             {i > 0 && wordGap}
                             {i === current.sentence.clozeIndex ? (
                               <>
+                                {target.prefix && (
+                                  <span data-testid="cloze-stem">{target.prefix}</span>
+                                )}
                                 {questionMode === 'type' ? (
                                   <input
                                     ref={inputRef}
@@ -1265,18 +1360,22 @@ export default function PracticePage() {
                                     dir={getActivePack().script.direction}
                                     lang={getActivePack().script.bcp47}
                                     className={`inline-block w-32 rounded-lg border-2 px-2 py-1 text-center text-xl font-medium transition-all outline-none focus:ring-2 focus:ring-offset-1 ${inputColorClass} ${fuzzyStatus === 'match' ? 'text-primary focus:ring-ring' : ''} ${fuzzyStatus === 'partial' ? 'text-primary focus:ring-ring' : ''} ${fuzzyStatus === 'wrong' ? 'text-destructive focus:ring-destructive' : ''} ${fuzzyStatus === 'empty' ? 'text-foreground focus:ring-ring' : ''} `}
-                                    style={{
-                                      minWidth: `${Math.max(graphemeLength(clozeBase) * 0.7, 4)}ch`,
-                                    }}
+                                    style={{ minWidth: blankWidth }}
                                   />
                                 ) : (
                                   <span
                                     className="inline-block rounded-lg border-2 border-[var(--clay)] bg-[color-mix(in_srgb,var(--clay)_14%,var(--card))] px-3 py-1 text-center text-xl font-bold text-foreground"
-                                    style={{
-                                      minWidth: `${Math.max(graphemeLength(clozeBase) * 0.7, 4)}ch`,
-                                    }}
+                                    style={{ minWidth: blankWidth }}
                                   >
                                     _____
+                                  </span>
+                                )}
+                                {target.prompt && (
+                                  <span
+                                    data-testid="cloze-base-form"
+                                    className="ml-1.5 text-lg font-normal text-muted-foreground"
+                                  >
+                                    ({target.prompt})
                                   </span>
                                 )}
                                 {clozePunct}
@@ -1361,7 +1460,7 @@ export default function PracticePage() {
                                 dir={getActivePack().script.direction}
                                 lang={getActivePack().script.bcp47}
                               >
-                                {option}
+                                {optionLabel(option, target.prefix)}
                               </bdi>
                             </button>
                           );
@@ -1397,7 +1496,7 @@ export default function PracticePage() {
                           variant="secondary"
                           onClick={() => {
                             if (!current) return;
-                            generateMcOptionsForSentence(current.sentence, queue);
+                            generateMcOptionsForSentence(current.sentence, queue, clozeDrill);
                             setMcFallback(true);
                           }}
                           title="Switch to multiple choice for this question"

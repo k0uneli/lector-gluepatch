@@ -273,6 +273,20 @@
       "route:cloze-review",
     ],
   });
+  N("flow:cloze-drills", "flow", "Cloze inflection drills", {
+    domain: "practice",
+    md: "practice.md#inflection-drills",
+    summary: "Ending or Base form drill. GET /due?drill= keeps cards whose word the dictionary knows as an inflected form and attaches its lemma, stem and paradigm distractors.",
+    steps: [
+      "fn:practice-startRoundWith",
+      "route:cloze-due",
+      "fn:clozeInflection",
+      "fn:findInflectionSource",
+      "fn:clozeTarget",
+      "fn:checkAnswer",
+      "fn:persistReview",
+    ],
+  });
   N("flow:blacklist", "flow", "Blacklist sentence", {
     domain: "practice",
     md: "practice.md#blacklist-sentence",
@@ -575,6 +589,8 @@
   N("file:route-known-words", "file", "known-words.ts", { path: "api/src/routes/known-words.ts", domain: "vocabulary" });
   N("file:route-cloze", "file", "cloze.ts", { path: "api/src/routes/cloze.ts", domain: "practice" });
   N("file:route-stt", "file", "stt.ts", { path: "api/src/routes/stt.ts", domain: "practice" });
+  N("file:cloze-inflection", "file", "cloze-inflection.ts", { path: "api/src/lib/cloze-inflection.ts", domain: "practice" });
+  N("file:pack-inflection", "file", "languages/inflection.ts", { path: "languages/inflection.ts" });
   N("file:stt-lib", "file", "lib/stt.ts", { path: "api/src/lib/stt.ts", domain: "practice" });
   N("file:route-journal", "file", "journal.ts", { path: "api/src/routes/journal.ts", domain: "journal" });
   N("file:route-chat", "file", "chat.ts", { path: "api/src/routes/chat.ts", domain: "tutor" });
@@ -647,6 +663,9 @@
   N("fn:seedSentenceBank", "fn", "seedSentenceBank", { path: "src/lib/data-layer.ts" });
   N("fn:checkAnswer", "fn", "checkAnswer", { path: "src/app/practice/utils.ts" });
   N("fn:matchVoiceAnswer", "fn", "matchVoiceAnswer", { path: "src/app/practice/utils.ts" });
+  N("fn:clozeTarget", "fn", "clozeTarget", { path: "src/app/practice/utils.ts" });
+  N("fn:clozeInflection", "fn", "clozeInflection", { path: "api/src/lib/cloze-inflection.ts" });
+  N("fn:findInflectionSource", "fn", "findInflectionSource", { path: "api/src/lib/dictionary-db.ts" });
   N("fn:startRecognition", "fn", "startRecognition", { path: "src/lib/stt/index.ts" });
   N("fn:calculateNextReview", "fn", "calculateNextReview", { path: "src/app/practice/utils.ts" });
   N("fn:commitRoundReview", "fn", "commitRoundReview", { path: "src/app/practice/use-cloze-round.ts" });
@@ -862,7 +881,7 @@
     "flow:cache-translation",
   ]);
   domainFlows("vocabulary", ["flow:save-vocab", "flow:vocab-list", "flow:known-word-import"]);
-  domainFlows("practice", ["flow:practice-word", "flow:dictation", "flow:voice-cloze", "flow:blacklist"]);
+  domainFlows("practice", ["flow:practice-word", "flow:dictation", "flow:voice-cloze", "flow:cloze-drills", "flow:blacklist"]);
   domainFlows("journal", ["flow:journal-submit", "flow:journal-draft"]);
   domainFlows("tutor", ["flow:tutor-chat", "flow:cloze-explain"]);
   domainFlows("listen", ["flow:speak-word", "flow:listen-along", "flow:youtube-captions"]);
@@ -1140,6 +1159,15 @@
   edge("route:stt-stream", "file:route-stt", "in");
   edge("file:route-stt", "file:stt-lib", "calls");
   edge("flow:voice-cloze", "fn:persistReview", "calls");
+  edge("flow:cloze-drills", "file:practice-page", "starts");
+  edge("route:cloze-due", "fn:clozeInflection", "calls");
+  edge("fn:clozeInflection", "file:cloze-inflection", "in");
+  edge("fn:clozeInflection", "fn:findInflectionSource", "calls");
+  edge("fn:findInflectionSource", "file:dictionary-db", "in");
+  edge("file:cloze-inflection", "file:pack-inflection", "uses");
+  edge("fn:clozeTarget", "file:practice-utils", "in");
+  edge("fn:clozeTarget", "file:pack-inflection", "uses");
+  edge("flow:cloze-drills", "fn:persistReview", "calls");
   edge("flow:blacklist", "route:cloze-put", "http");
   edge("route:cloze-put", "table:clozeSentences", "writes");
 

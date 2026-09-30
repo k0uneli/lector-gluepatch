@@ -7,7 +7,10 @@ import {
   calculateNextReview,
   calculatePoints,
   buildMultipleChoiceOptions,
+  buildInflectionOptions,
+  clozeTarget,
   generateDistractors,
+  optionLabel,
   shuffle,
 } from '../utils';
 import { LANGUAGES } from '@/lib/languages';
@@ -469,5 +472,72 @@ describe('shuffle', () => {
     const copy = [...input];
     shuffle(input);
     expect(input).toEqual(copy);
+  });
+});
+
+describe('inflection drills', () => {
+  const { ru } = LANGUAGES;
+  const inflection = {
+    lemma: 'книга',
+    aspectPair: null,
+    tags: ['accusative', 'singular'],
+    description: 'accusative singular',
+    stem: 'книг',
+    ending: 'у',
+    distractors: ['книге', 'книгой', 'книга'],
+  };
+  const card = { clozeWord: 'книгу.', clozeIndex: 2, inflection };
+
+  it('asks for the ending alone after the stem', () => {
+    const target = clozeTarget(card, 'ending', ru);
+    expect(target).toEqual({ prefix: 'книг', answer: 'у', prompt: null });
+    expect(checkAnswer(target.prefix + 'у', card.clozeWord, ru)).toBe(true);
+    expect(checkAnswer(target.prefix + 'а', card.clozeWord, ru)).toBe(false);
+  });
+
+  it('asks for the whole form beside the base form', () => {
+    expect(clozeTarget(card, 'inflect', ru)).toEqual({
+      prefix: '',
+      answer: 'книгу',
+      prompt: 'книга',
+    });
+    const aspectPair: [string, string] = ['читать', 'прочитать'];
+    const verb = {
+      clozeWord: 'читала',
+      clozeIndex: 1,
+      inflection: { ...inflection, lemma: 'читать', aspectPair },
+    };
+    expect(clozeTarget(verb, 'inflect', ru).prompt).toBe('читать / прочитать');
+  });
+
+  it('capitalises the base form of a proper noun', () => {
+    const moscow = {
+      clozeWord: 'Москве',
+      clozeIndex: 2,
+      inflection: { ...inflection, lemma: 'москва', stem: 'Москв', ending: 'е' },
+    };
+    expect(clozeTarget(moscow, 'inflect', ru).prompt).toBe('Москва');
+    expect(clozeTarget({ ...moscow, clozeIndex: 0 }, 'inflect', ru).prompt).toBe('москва');
+  });
+
+  it('falls back to the whole word without inflection data', () => {
+    expect(clozeTarget({ clozeWord: 'так,', clozeIndex: 0 }, 'ending', ru)).toEqual({
+      prefix: '',
+      answer: 'так',
+      prompt: null,
+    });
+    expect(clozeTarget(card, 'word', ru).answer).toBe('книгу');
+  });
+
+  it('builds options from the paradigm, cased like the answer', () => {
+    const { options, correctIndex } = buildInflectionOptions('Книгу', ['книге', 'книга'], ru);
+    expect([...options].sort()).toEqual(['Книга', 'Книге', 'Книгу']);
+    expect(options[correctIndex]).toBe('Книгу');
+  });
+
+  it('labels an option on the stem by its ending', () => {
+    expect(optionLabel('книгой', 'книг')).toBe('-ой');
+    expect(optionLabel('шёл', 'ид')).toBe('шёл');
+    expect(optionLabel('книгой', '')).toBe('книгой');
   });
 });

@@ -4,6 +4,8 @@
  * shapes returned by the API routes and consumed via src/lib/data-layer.ts.
  */
 
+import type { ClozeInflection } from '../../languages/inflection';
+
 export type WordState = 'new' | 'level1' | 'level2' | 'level3' | 'level4' | 'known' | 'ignored';
 export type VocabType = 'word' | 'phrase';
 export type ClozeMasteryLevel = 0 | 25 | 50 | 75 | 100;
@@ -172,6 +174,8 @@ export interface ClozeSentence {
   lastReviewed?: Date;
   timesCorrect: number;
   timesIncorrect: number;
+  /** Present only on cards fetched for the Ending or Base form drill. */
+  inflection?: ClozeInflection;
 }
 
 export interface DailyStats {
