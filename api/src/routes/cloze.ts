@@ -8,8 +8,10 @@ import {
   isValidLanguageCode,
   normalizeText,
   resolveClozeTokens,
+  type ClozeInflection,
   type LanguageCode,
 } from '../lib/languages';
+import { clozeInflection, isInflectionDrill } from '../lib/cloze-inflection';
 import { getCurrentUserId } from '../lib/user';
 import { randomUUID } from 'crypto';
 import { entitlements, planLimitResponse, type AtomicLimitCheck } from '../lib/entitlements';
@@ -592,6 +594,25 @@ app.get('/due', (c) => {
     const placeholders = [...excludeFolded].map(() => '?').join(',');
     query += ` AND clozeWord NOT IN (${placeholders})`;
     params.push(...excludeFolded);
+  }
+
+  // A drill serves only cards whose answer the dictionary knows as an inflected
+  // form, so it walks the shuffled rows until the round is full.
+  const drill = c.req.query('drill');
+  if (isInflectionDrill(drill) && pack.inflection) {
+    const cards: Array<ReturnType<typeof clozeResponse> & { inflection: ClozeInflection }> = [];
+    const byWord = new Map<string, ClozeInflection | null>();
+    const rows = db.prepare(`${query} ORDER BY RANDOM()`).iterate(...params);
+    for (const row of rows as Iterable<ClozeSentenceRow>) {
+      const key = foldWord(row.clozeWord, pack);
+      if (excludeFolded.has(key)) continue;
+      if (!byWord.has(key)) byWord.set(key, clozeInflection(row.clozeWord, lang, drill));
+      const inflection = byWord.get(key);
+      if (!inflection) continue;
+      cards.push({ ...clozeResponse(row), inflection });
+      if (cards.length >= limit) break;
+    }
+    return c.json(cards);
   }
 
   query += ' ORDER BY RANDOM() LIMIT ?';

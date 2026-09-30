@@ -12,6 +12,7 @@ import {
   getLanguageConfig,
   isValidLanguageCode,
   lookupByVocabKeys,
+  type ClozeDrill,
 } from './languages';
 import { apiFetch, apiUrl } from './api-base';
 import { activeTenantId, readLanguageCache } from './language-cache';
@@ -929,6 +930,7 @@ export async function getClozeSentencesByCollection(
   collection: ClozeCollection,
   limit: number = 20,
   excludeWords: string[] = [],
+  drill: ClozeDrill = 'word',
 ): Promise<ClozeSentence[]> {
   const params = new URLSearchParams({
     collection,
@@ -938,6 +940,7 @@ export async function getClozeSentencesByCollection(
   if (excludeWords.length > 0) {
     params.set('excludeWords', excludeWords.join(','));
   }
+  if (drill !== 'word') params.set('drill', drill);
 
   params.set('language', getActiveLanguage());
   const res = await apiFetch(`/api/cloze/due?${params}`);
@@ -953,6 +956,7 @@ export async function getNewSentencesByCollection(
   collection: ClozeCollection,
   limit: number = 20,
   excludeWords: string[] = [],
+  drill: ClozeDrill = 'word',
 ): Promise<ClozeSentence[]> {
   const params = new URLSearchParams({
     collection,
@@ -962,6 +966,7 @@ export async function getNewSentencesByCollection(
   if (excludeWords.length > 0) {
     params.set('excludeWords', excludeWords.join(','));
   }
+  if (drill !== 'word') params.set('drill', drill);
 
   params.set('language', getActiveLanguage());
   const res = await apiFetch(`/api/cloze/due?${params}`);

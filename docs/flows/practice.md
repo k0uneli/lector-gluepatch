@@ -75,11 +75,12 @@ sequenceDiagram
 - `mode=review`: `nextReview <= now` and `reviewCount > 0`. This includes mastery 100.
 - else: `nextReview <= now`
 
-Blacklisted rows stay out. Order is random.
+Blacklisted rows stay out. Order is random. For `drill`, see [Inflection drills](#inflection-drills).
 
 ### Branches
 
 - The Type, MC, or Voice mode lives in `localStorage` key `cloze-practice-mode`.
+- The Blank drill lives in `localStorage` key `lector-cloze-drill`.
 - Type mode can fall back to MC mode for one card. The next card returns to type.
 - If `persistReview` fails, the round does not advance.
 - Word-state and daily-stat writes are best effort after a saved review.
@@ -166,6 +167,59 @@ sequenceDiagram
 - Cloud answers `404` on `/api/stt/*`. The Voice mode button does not show.
 
 Tests: `e2e/voice-cloze.spec.ts`. Unit: `src/app/practice/__tests__/voice.test.ts`, `src/lib/stt/audio.test.ts`, `api/src/lib/stt.test.ts`, `api/src/routes/stt.test.ts`.
+
+## Inflection drills
+
+**App domain:** Practice
+
+The Blank menu sits next to Mode. It shows only for a pack with `inflection` in its manifest: `ru` and `el`.
+
+- Whole word: the normal cloze.
+- Ending: the stem shows before the blank. The user types the ending.
+- Base form: the lemma shows after the blank. A Russian verb shows its aspect pair, for example `(читать / прочитать)`. The user types the full form.
+
+```mermaid
+sequenceDiagram
+  actor User
+  participant Page as PracticePage
+  participant API as cloze.ts
+  participant Infl as clozeInflection
+  participant Dict as dictionary-db
+
+  User->>Page: Pick a drill, then Start
+  Page->>API: GET /api/cloze/due?drill=ending|inflect
+  loop Shuffled rows until the round is full
+    API->>Infl: clozeInflection(clozeWord)
+    Infl->>Dict: findInflectionSource
+    Dict-->>Infl: lemma, tags, paradigm, word senses
+    Infl-->>API: inflection, or null to skip the card
+  end
+  API-->>Page: cards with inflection
+  Page->>Page: clozeTarget, then checkAnswer on stem + typed ending
+```
+
+| Role | Path | Function |
+| --- | --- | --- |
+| Page | `src/app/practice/page.tsx` | `handleSetClozeDrill`, `generateMcOptionsForSentence` |
+| Target | `src/app/practice/utils.ts` | `clozeTarget`, `buildInflectionOptions`, `optionLabel` |
+| API | `api/src/routes/cloze.ts` | `GET /due` with `drill` |
+| Analysis | `api/src/lib/cloze-inflection.ts` | `clozeInflection` |
+| Dictionary | `api/src/lib/dictionary-db.ts` | `findInflectionSource` |
+| Rules | `languages/inflection.ts` | `isInflectionType`, `splitEnding`, `pickDistractors`, `describeForm`, `aspectPair` |
+| Endings | `languages/ru/manifest.ts`, `languages/el/manifest.ts` | `inflection.endings`, `inflection.lemmaEndings` |
+
+### Branches
+
+- A card is kept only when its word is an inflected form in the kaikki `inflections` table. Derivations, aspect links, dated spellings and unaccented aliases do not count.
+- A word that is also an adverb, particle, conjunction or preposition is skipped. Russian так and Greek λίγο are examples.
+- The Ending drill splits where the form and its lemma share a stem and both leftovers are pack endings (дел+а beside дел+о). An irregular stem takes the longest ending (мог+ла). A zero ending (дел, минут) leaves the card to Base form.
+- Multiple choice offers other forms of the same lemma, never a second spelling of the answer's own cell.
+- Feedback shows the form's grammar, for example "accusative singular of книга".
+- The drill does not change SRS. The card and its mastery are the same as in Whole word.
+- Without a dictionary for the language, a drill round is empty.
+- The Review Due counts include cards that a drill round skips.
+
+Tests: `e2e/cloze-drills.spec.ts`. Unit: `languages/inflection.test.ts`, `src/app/practice/__tests__/utils.test.ts`, `api/src/routes/cloze-drill.test.ts`.
 
 ## Blacklist sentence
 

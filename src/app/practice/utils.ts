@@ -1,13 +1,16 @@
 import { splitTrailingPunctuation } from '@/lib/words';
 import {
+  baseFormPrompt,
   clozeTokens,
   clozeTokenSeparator,
   foldApostrophesFor,
   foldForComparison,
   graphemeLength,
   lowerForPack,
+  matchInitialCase,
   normalizeText,
   resolveClozeTokens,
+  type ClozeDrill,
   type LanguageConfig,
 } from '@/lib/languages';
 import { ClozeMasteryLevel, ClozeSentence } from '@/types';
@@ -207,6 +210,58 @@ export function buildMultipleChoiceOptions(
   const correctIndex = options.findIndex((option) => normalize(option) === normalize(cleanCorrect));
 
   return { options, correctIndex };
+}
+
+// --- Inflection drills -----------------------------------------------------
+
+export interface ClozeTarget {
+  /** Shown before the blank: the stem in the Ending drill. */
+  prefix: string;
+  /** What the learner supplies. */
+  answer: string;
+  /** Shown after the blank in the Base form drill. */
+  prompt: string | null;
+}
+
+/** A card without inflection data falls back to the whole word. */
+export function clozeTarget(
+  sentence: Pick<ClozeSentence, 'clozeWord' | 'clozeIndex' | 'inflection'>,
+  drill: ClozeDrill,
+  pack: LanguageConfig,
+): ClozeTarget {
+  const [word] = splitTrailingPunctuation(sentence.clozeWord);
+  const inflection = sentence.inflection;
+  const stem = inflection?.stem;
+  if (drill === 'ending' && stem && word.startsWith(stem) && word.length > stem.length) {
+    return { prefix: stem, answer: word.slice(stem.length), prompt: null };
+  }
+  if (drill === 'inflect' && inflection) {
+    const prompt = baseFormPrompt(inflection);
+    // Past the first word a capital marks a proper noun, which the dictionary keys lowercase.
+    return {
+      prefix: '',
+      answer: word,
+      prompt: sentence.clozeIndex > 0 ? matchInitialCase(prompt, word, pack) : prompt,
+    };
+  }
+  return { prefix: '', answer: word, prompt: null };
+}
+
+export function buildInflectionOptions(
+  correctWord: string,
+  distractors: readonly string[],
+  pack: LanguageConfig,
+): { options: string[]; correctIndex: number } {
+  const [clean] = splitTrailingPunctuation(correctWord);
+  const options = shuffle([clean, ...distractors.map((d) => matchInitialCase(d, clean, pack))]);
+  return { options, correctIndex: options.indexOf(clean) };
+}
+
+/** In the Ending drill an option on the shown stem reads as its ending alone: "-у". */
+export function optionLabel(option: string, prefix: string): string {
+  return prefix && option.startsWith(prefix) && option.length > prefix.length
+    ? `-${option.slice(prefix.length)}`
+    : option;
 }
 
 // --- Dictation scoring ------------------------------------------------------

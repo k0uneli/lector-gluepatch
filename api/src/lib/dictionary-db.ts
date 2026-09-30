@@ -10,6 +10,7 @@ import {
   isValidLanguageCode,
   latinLookupVariants,
   stripMarks,
+  type InflectionRow,
 } from './languages';
 import { esperantoIpa } from '../../../languages/eo/ipa';
 import { stemCandidates } from '../../../languages/morphology';
@@ -368,6 +369,9 @@ type Stmts = {
   selectRelated: Statement;
   selectInflectionLemma: Statement;
   selectReadings: Statement;
+  selectInflectionLemmas: Statement;
+  selectParadigm: Statement;
+  selectPartsOfSpeech: Statement;
 };
 
 const _stmtsByLang = new Map<string, Stmts>();
@@ -437,6 +441,16 @@ function getStmts(language: string): Stmts | null {
            FROM json_each(?) k
           WHERE ipa IS NOT NULL`,
       ),
+      selectInflectionLemmas: db.prepare(
+        `SELECT i.lemma, i.type FROM inflections i
+         JOIN entries e ON e.word = i.lemma
+         WHERE i.inflected_form = ?
+         ORDER BY (e.rank IS NULL), e.rank, i.rowid`,
+      ),
+      selectParadigm: db.prepare(
+        'SELECT inflected_form AS form, type FROM inflections WHERE lemma = ? ORDER BY rowid',
+      ),
+      selectPartsOfSpeech: db.prepare('SELECT DISTINCT pos FROM senses WHERE word = ?'),
     };
     _stmtsByLang.set(language, stmts);
     return stmts;
@@ -929,6 +943,47 @@ function stripTranscriptionDelimiters(ipa: string): string {
   // Length 2 or less would be the delimiters alone, and slicing would empty it.
   if (!paired || trimmed.length <= 2) return trimmed;
   return trimmed.slice(1, -1).trim();
+}
+
+export interface InflectionSource {
+  lemma: string;
+  type: string | null;
+  lemmaPos: string[];
+  paradigm: InflectionRow[];
+  /** Senses stored under the inflected form itself. */
+  wordSenses: SenseRow[];
+}
+
+/**
+ * The most frequent lemma claiming `word` whose row passes `accept`, with the
+ * lemma's full paradigm. Null without a dictionary.
+ */
+export function findInflectionSource(
+  word: string,
+  language: string,
+  accept: (row: { lemma: string; type: string | null; lemmaPos: string[] }) => boolean,
+): InflectionSource | null {
+  const stmts = getStmts(language);
+  if (!stmts) return null;
+  try {
+    const key = foldKey(word, language);
+    const rows = stmts.selectInflectionLemmas.all(key) as Array<{
+      lemma: string;
+      type: string | null;
+    }>;
+    for (const { lemma, type } of rows) {
+      const lemmaPos = (stmts.selectPartsOfSpeech.all(lemma) as Array<{ pos: string | null }>)
+        .map((r) => r.pos)
+        .filter((pos): pos is string => !!pos);
+      if (!accept({ lemma, type, lemmaPos })) continue;
+      const paradigm = stmts.selectParadigm.all(lemma) as InflectionRow[];
+      const wordSenses = stmts.selectSenses.all(key) as SenseRow[];
+      return { lemma, type, lemmaPos, paradigm, wordSenses };
+    }
+  } catch (err) {
+    console.warn(`[dictionary] inflection lookup failed for ${language}:`, err);
+  }
+  return null;
 }
 
 /**

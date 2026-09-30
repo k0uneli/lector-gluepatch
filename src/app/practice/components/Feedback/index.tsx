@@ -196,6 +196,7 @@ export default function Feedback({
         points={feedbackData.points}
         newMastery={feedbackData.newMastery}
         previousMastery={feedbackData.previousMastery}
+        grammar={feedbackData.grammar}
         onNext={handleNextButtonPressed}
         onAddToAnki={handleAddToAnki}
         isAddingToAnki={isAddingToAnki}

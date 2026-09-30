@@ -20,6 +20,7 @@ export default function ClozeFeedback({
   points,
   newMastery,
   previousMastery,
+  grammar,
   onNext,
   onAddToAnki,
   isAddingToAnki = false,
@@ -122,6 +123,11 @@ export default function ClozeFeedback({
             {correctWord}
           </TargetText>
         </div>
+        {grammar && (
+          <p className="text-sm text-muted-foreground" data-testid="cloze-grammar">
+            {grammar}
+          </p>
+        )}
       </div>
 
       {/* Translation */}

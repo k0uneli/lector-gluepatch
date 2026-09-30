@@ -7,6 +7,7 @@ export interface ClozeFeedbackProps {
   points: number;
   newMastery: number;
   previousMastery: number;
+  grammar?: string;
   onNext: () => void;
   onAddToAnki: () => void;
   isAddingToAnki?: boolean;

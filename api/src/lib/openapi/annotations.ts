@@ -362,6 +362,31 @@ export const schemas: Record<string, JsonSchema> = {
       timesCorrect: { type: 'integer' },
       timesIncorrect: { type: 'integer' },
       blacklisted: { type: 'integer', enum: [0, 1], description: '1 hides the card.' },
+      inflection: {
+        type: 'object',
+        description: 'Present only when the card was requested with `drill`.',
+        properties: {
+          lemma: { type: 'string', description: 'Dictionary form of the blanked word.' },
+          aspectPair: {
+            type: ['array', 'null'],
+            items: { type: 'string' },
+            description: 'Imperfective and perfective infinitives, when the verb has a partner.',
+          },
+          tags: { type: 'array', items: { type: 'string' } },
+          description: { type: 'string', description: 'The grammar of the form, in words.' },
+          stem: {
+            ...NULLABLE_STRING,
+            description: 'The start of the word, shown in the Ending drill.',
+          },
+          ending: { ...NULLABLE_STRING, description: 'The rest of the word after `stem`.' },
+          distractors: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Other forms of the same word, for multiple choice.',
+          },
+        },
+        required: ['lemma', 'aspectPair', 'tags', 'description', 'stem', 'ending', 'distractors'],
+      },
     },
     required: ['id', 'sentence', 'clozeWord', 'clozeIndex', 'masteryLevel', 'nextReview'],
   },
@@ -1318,6 +1343,12 @@ const practiceOps: Record<string, OperationDoc> = {
         name: 'excludeWords',
         description: 'Comma-separated words to leave out of the round.',
         schema: { type: 'string' },
+      },
+      {
+        name: 'drill',
+        description:
+          'Return only cards whose word is an inflected form in the dictionary, each with `inflection`. `ending` also needs a known ending. The language must support the drills.',
+        schema: { type: 'string', enum: ['ending', 'inflect'] },
       },
     ],
     responses: {

@@ -23,6 +23,8 @@ export interface IFeedbackData {
   points: number;
   newMastery: ClozeMasteryLevel;
   previousMastery: ClozeMasteryLevel;
+  /** "accusative singular of книга", in the inflection drills. */
+  grammar?: string;
 }
 
 export interface CurrentSentence {
