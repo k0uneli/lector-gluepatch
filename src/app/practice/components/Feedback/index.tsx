@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import ClozeFeedback from '@/components/ClozeFeedback';
 import { splitTrailingPunctuation } from '@/lib/words';
 import TargetText from '@/components/TargetText';
-import { addClozeCard } from '@/lib/anki';
+import { addClozeCard, addFormattedNote } from '@/lib/anki';
+import { activeNoteFormat, loadAnkiNoteFormats } from '@/lib/anki-formats';
 import { queueForAnki } from '@/lib/anki-queue';
 import { useAnkiTransport } from '@/lib/anki-transport';
 import { clozeTokenSeparator, foldWord, resolveClozeTokens } from '@/lib/languages';
@@ -85,6 +86,24 @@ export default function Feedback({
           },
         ]);
         if (result.failed.length > 0) throw new Error(result.failed[0].error);
+        setAnkiAdded(true);
+        return;
+      }
+
+      const format = activeNoteFormat(await loadAnkiNoteFormats(), activeLang.code, 'sentence');
+      if (format) {
+        const result = await addFormattedNote(
+          deckName,
+          format,
+          {
+            word: cleanWord,
+            sentence: current.sentence.sentence,
+            definition: current.sentence.translation,
+            definition2: '',
+          },
+          { audioText: current.sentence.sentence, language: activeLang.code, pack: activeLang },
+        );
+        if (result.audioFailed) toast.warning('Added to Anki without audio — no server voice.');
         setAnkiAdded(true);
         return;
       }

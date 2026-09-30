@@ -15,7 +15,11 @@ Sources: reader drawer, vocab export, practice feedback.
 ```mermaid
 flowchart TD
   add[Add word or cloze] --> transport{ankiTransport}
-  transport -->|ankiconnect| anki[anki.ts addWordCard / addClozeCard]
+  transport -->|ankiconnect| format{Card format for language?}
+  format -->|no| anki[anki.ts addWordCard / addClozeCard]
+  format -->|yes| custom[anki.ts addFormattedNote]
+  custom --> tts["POST /api/tts, then storeMediaFile"]
+  tts --> http
   anki --> http["POST localhost:8765 addNote"]
   http --> mark[markVocabPushedToAnki]
   transport -->|addon| queue[queueForAnki]
@@ -30,7 +34,9 @@ flowchart TD
 | Role | Path | Function |
 | --- | --- | --- |
 | Transport | `src/lib/anki-transport.ts` | `useAnkiTransport` |
-| AnkiConnect (legacy) | `src/lib/anki.ts` | `addWordCard`, `addClozeCard`, `addBasicCard`, `ankiRequest` |
+| AnkiConnect (legacy) | `src/lib/anki.ts` | `addWordCard`, `addClozeCard`, `addBasicCard`, `addFormattedNote`, `ankiRequest` |
+| Card formats | `src/lib/anki-formats.ts` | `loadAnkiNoteFormats`, `activeNoteFormat`, `renderNoteFields` |
+| Card format settings | `src/app/settings/components/AnkiCardFormats/index.tsx` | `AnkiCardFormats` |
 | Queue | `src/lib/anki-queue.ts` | `queueForAnki` |
 | Reader | `src/app/read/[bookId]/page.tsx` | `addWordToAnki`, `addClozeToAnki` |
 | Vocab | `src/app/vocab/page.tsx` | `handleExportToAnki` |
@@ -46,6 +52,9 @@ flowchart TD
 - Re-queue bumps `anki_pending.version`. An ack that is stale cannot remove the new row.
 - When the reader has a `WordSource`, transcript source fields are present.
 - The add-on upserts by `LectorId`. The browser uses note types Basic and Cloze with tag `lector`.
+- On AnkiConnect, `settings.ankiNoteFormats` can set a word card and a sentence card for each language. Each card uses any note type, and maps its fields to Word, Sentence, Sentence (cloze), Definition, Definition #2, Image, or Pronunciation. The add-on transport ignores this setting.
+- A Pronunciation field gets server TTS through `storeMediaFile`. With no server voice, the note is added and the field stays empty.
+- A sentence card without a Sentence (cloze) field is not a cloze. The reader then makes the target word optional.
 - `GET /api/anki` and `POST /api/anki` still proxy AnkiConnect. The web client does not use them for export.
 
 ### Tables
@@ -54,7 +63,7 @@ flowchart TD
 
 ### Tests
 
-`e2e/reader-anki.spec.ts`, `e2e/vocab-anki-export.spec.ts`, `e2e/anki-addon.spec.ts`.
+`e2e/reader-anki.spec.ts`, `e2e/vocab-anki-export.spec.ts`, `e2e/anki-addon.spec.ts`, `e2e/anki-card-formats.spec.ts`.
 
 ## Sync Anki reviews
 
@@ -84,6 +93,8 @@ flowchart TD
 | Client | `src/lib/data-layer.ts` | `syncAnkiReviews` |
 | API | `api/src/routes/anki.ts` | `POST /reviews`, `POST /sync-reviews` |
 | Add-on | `anki-addon/lector/sync.py` | `post_reviews`, `flush_reviews` |
+
+For a note type in `settings.ankiNoteFormats`, `syncWordStates` reads the word from the field mapped to Word.
 
 Upgrade only. The path never demotes and never touches `ignored`. New Anki cards (`type === 0`) skip. Map: Learning to `level1`, Relearning to `level2`, Young to `level4`, Mature to `known`.
 

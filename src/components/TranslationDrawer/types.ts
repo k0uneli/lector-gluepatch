@@ -87,4 +87,7 @@ export interface TranslationDrawerProps {
   onAddToAnki?: () => Promise<void>;
   /** Push a cloze card — called with the word the user chose to blank (phrase selections only). */
   onAddCloze?: (blankWord: string) => Promise<void>;
+  /** False when the sentence card is not a cloze: picking a word is then optional
+      and `onAddCloze` may receive ''. Defaults to true. */
+  sentenceCardIsCloze?: boolean;
 }

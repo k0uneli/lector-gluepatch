@@ -255,6 +255,29 @@ async function speakWithServer(text: string, rate: number): Promise<boolean> {
 }
 
 /**
+ * Synthesize `text` on the server without playing it. Null when the server
+ * has no voice for it; browser speech cannot be captured as a file.
+ */
+export async function synthesizeSpeech(
+  text: string,
+  language: string,
+  rate: number = DEFAULT_RATE,
+): Promise<{ audioContent: string; contentType: string } | null> {
+  try {
+    const response = await apiFetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, rate, language }),
+    });
+    const data = await response.json();
+    if (!response.ok || data.error || !data.audioContent) return null;
+    return { audioContent: data.audioContent, contentType: data.contentType };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Speak using browser's speech synthesis
  */
 function speakWithBrowser(text: string, rate: number): void {

@@ -11,6 +11,16 @@ import { foldWord, wrapWholeWord, type LanguageConfig } from './languages';
 import { getActivePack } from './data-layer';
 import type { WordState } from '@/types';
 import { apiFetch } from './api-base';
+import {
+  audioFieldNames,
+  isClozeFormat,
+  loadAnkiNoteFormats,
+  renderNoteFields,
+  type AnkiCardContent,
+  type AnkiNoteFormat,
+  type AnkiNoteFormats,
+} from './anki-formats';
+import { synthesizeSpeech } from './tts';
 
 const DEFAULT_ANKI_CONNECT_URL = 'http://localhost:8765';
 
@@ -69,6 +79,7 @@ interface CardInfo {
   type: number;
   note: number;
   deckName: string;
+  modelName: string;
 }
 
 // Rank used for upgrade-only sync (ignored shares known's rank so it is never overridden).
@@ -203,6 +214,15 @@ export async function isAnkiConnected(): Promise<boolean> {
  */
 export async function getDeckNames(): Promise<string[]> {
   return ankiRequest<string[]>('deckNames');
+}
+
+/** Every note type in the user's collection. */
+export async function getModelNames(): Promise<string[]> {
+  return ankiRequest<string[]>('modelNames');
+}
+
+export async function getModelFieldNames(modelName: string): Promise<string[]> {
+  return ankiRequest<string[]>('modelFieldNames', { modelName });
 }
 
 /**
@@ -400,6 +420,61 @@ export async function addClozeCard(
   return noteId;
 }
 
+function hashText(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * Add a note in a user-defined format (see anki-formats.ts). Audio fields get
+ * server TTS of `audioText`; `audioFailed` reports that no voice was available
+ * and the note was added without it.
+ */
+export async function addFormattedNote(
+  deckName: string,
+  format: AnkiNoteFormat,
+  content: AnkiCardContent,
+  options: { audioText: string; language: string; pack?: LanguageConfig },
+): Promise<{ noteId: number; audioFailed: boolean }> {
+  await ensureDeckExists(deckName);
+  const fields = renderNoteFields(format, content, options.pack);
+
+  let audioFailed = false;
+  const audioFields = audioFieldNames(format);
+  const audioText = options.audioText.trim();
+  if (audioFields.length > 0 && audioText) {
+    const audio = await synthesizeSpeech(audioText, options.language);
+    if (audio) {
+      const ext = audio.contentType.includes('wav') ? 'wav' : 'mp3';
+      const stored = await ankiRequest<string>('storeMediaFile', {
+        filename: `lector-${options.language}-${hashText(audioText)}.${ext}`,
+        data: audio.audioContent,
+      });
+      for (const name of audioFields) fields[name] = `[sound:${stored}]`;
+    } else {
+      audioFailed = true;
+    }
+  }
+
+  const noteId = await ankiRequest<number | null>('addNote', {
+    note: {
+      deckName,
+      modelName: format.modelName,
+      fields,
+      options: { allowDuplicate: true },
+      tags: ['lector', 'vocabulary', ...(isClozeFormat(format) ? ['cloze'] : [])],
+    },
+  });
+  if (noteId === null) {
+    throw new Error(`Failed to add note — check that the '${format.modelName}' note type exists`);
+  }
+  return { noteId, audioFailed };
+}
+
 /**
  * Isolate a run of target-language text inside a card field (#253).
  *
@@ -470,6 +545,30 @@ function extractTranslation(backField: string, textField: string, extraField: st
   return '';
 }
 
+interface CustomFieldNames {
+  word?: string;
+  sentence?: string;
+  definition?: string;
+}
+
+/** Note type → the fields a user format writes the word, sentence and definition into. */
+export function customFieldNamesByModel(formats: AnkiNoteFormats): Map<string, CustomFieldNames> {
+  const byModel = new Map<string, CustomFieldNames>();
+  for (const perLanguage of Object.values(formats)) {
+    for (const format of Object.values(perLanguage ?? {})) {
+      if (!format?.modelName) continue;
+      const names = byModel.get(format.modelName) ?? {};
+      for (const [field, source] of Object.entries(format.fields)) {
+        if (source === 'word') names.word ??= field;
+        if (source === 'sentence' || source === 'sentenceCloze') names.sentence ??= field;
+        if (source === 'definition') names.definition ??= field;
+      }
+      byModel.set(format.modelName, names);
+    }
+  }
+  return byModel;
+}
+
 /**
  * Query AnkiConnect for all lector-created cards (tagged `lector` or
  * `afrikaans-reader`) and return a map of
@@ -502,6 +601,7 @@ export async function syncWordStates(): Promise<
   const cardsInfo = await ankiRequest<CardInfo[]>('cardsInfo', {
     cards: cardIds,
   });
+  const customFields = customFieldNamesByModel(await loadAnkiNoteFormats());
 
   // Build a map of word -> { type, interval, sentence, translation, deckName }
   const wordStates = new Map<
@@ -509,7 +609,44 @@ export async function syncWordStates(): Promise<
     { interval: number; type: number; sentence: string; translation: string; deckName: string }
   >();
 
+  const recordCard = (rawWord: string, card: CardInfo, sentence: string, translation: string) => {
+    // Anki card text is an external ingress (#289): fold like every other
+    // vocab key so decomposed input still matches lector entries.
+    const word = foldWord(rawWord.trim(), getActivePack());
+    const cardState = ankiCardToState(card.type, card.interval);
+    // Skip New cards — they carry no learning signal and must not occupy a
+    // word slot, so a word whose only cards are New stays out of the sync.
+    if (!cardState) return;
+    // Keep the card that maps to the highest lector state (dedup by rank).
+    const existing = wordStates.get(word);
+    const existingState = existing ? ankiCardToState(existing.type, existing.interval) : null;
+    const existingRank = existingState ? STATE_RANK[existingState] : -1;
+    if (STATE_RANK[cardState] > existingRank) {
+      wordStates.set(word, {
+        interval: card.interval,
+        type: card.type,
+        sentence,
+        translation,
+        deckName: card.deckName,
+      });
+    }
+  };
+
   for (const card of cardsInfo) {
+    const custom = customFields.get(card.modelName);
+    const customWord = custom?.word ? stripHtml(card.fields[custom.word]?.value || '') : '';
+    if (custom && customWord) {
+      const sentence = custom.sentence ? card.fields[custom.sentence]?.value || '' : '';
+      const definition = custom.definition ? card.fields[custom.definition]?.value || '' : '';
+      recordCard(
+        customWord,
+        card,
+        stripHtml(sentence.replace(/\{\{c\d+::([^}]+)\}\}/g, '$1')),
+        stripHtml(definition),
+      );
+      continue;
+    }
+
     // Extract the target word. Try in order:
     // 1. Bold text (our format): <b>word</b>
     // 2. Dedicated Word field
@@ -542,28 +679,12 @@ export async function syncWordStates(): Promise<
     }
 
     if (word) {
-      // Anki card text is an external ingress (#289): fold like every other
-      // vocab key so decomposed input still matches lector entries.
-      word = foldWord(word.trim(), getActivePack());
-      const cardState = ankiCardToState(card.type, card.interval);
-      // Skip New cards — they carry no learning signal and must not occupy a
-      // word slot, so a word whose only cards are New stays out of the sync.
-      if (cardState) {
-        // Keep the card that maps to the highest lector state (dedup by rank).
-        const existing = wordStates.get(word);
-        const cardRank = STATE_RANK[cardState];
-        const existingState = existing ? ankiCardToState(existing.type, existing.interval) : null;
-        const existingRank = existingState ? STATE_RANK[existingState] : -1;
-        if (cardRank > existingRank) {
-          wordStates.set(word, {
-            interval: card.interval,
-            type: card.type,
-            sentence: extractSentence(frontField, textField),
-            translation: extractTranslation(backField, textField, extraField),
-            deckName: card.deckName,
-          });
-        }
-      }
+      recordCard(
+        word,
+        card,
+        extractSentence(frontField, textField),
+        extractTranslation(backField, textField, extraField),
+      );
     }
   }
 
