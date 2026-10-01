@@ -923,6 +923,37 @@ const libraryOps: Record<string, OperationDoc> = {
       '416': { description: 'The range starts past the end of the file.' },
     },
   },
+  'GET /api/lessons/{id}/clip': {
+    notFound: 'The lesson has no audio, or the stored file is gone.',
+    summary: 'Cut a clip from the audio of a lesson',
+    description:
+      'Returns one span of an uploaded audio or video lesson as mono MP3, for example one transcript line. The clip starts a little before `startMs` and ends a little after `endMs`.',
+    tag: 'Library',
+    sharedParams: LANG,
+    pathParams: { id: 'Lesson identifier.' },
+    query: [
+      {
+        name: 'startMs',
+        description: 'Start of the span, in milliseconds.',
+        schema: { type: 'integer', minimum: 0 },
+        required: true,
+      },
+      {
+        name: 'endMs',
+        description: 'End of the span, in milliseconds. At most 60000 after `startMs`.',
+        schema: { type: 'integer', minimum: 1 },
+        required: true,
+      },
+    ],
+    responses: {
+      '200': {
+        description: 'The clip.',
+        contentType: 'audio/mpeg',
+        schema: { type: 'string', format: 'binary' },
+      },
+      '400': { description: 'The span is not valid, or it is longer than 60 seconds.' },
+    },
+  },
   'POST /api/lessons/{id}/retry-transcription': {
     notFound: 'No such lesson, or its transcription did not fail.',
     summary: 'Retry a failed transcription',

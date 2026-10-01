@@ -72,9 +72,11 @@ sequenceDiagram
 
 Word tap pauses and opens the Translation drawer. Shadow mode repeats a unit.
 
+On AnkiConnect, each line has a hover button that adds the line to Anki. See [Push to Anki](anki.md#push-to-anki).
+
 Tables: `lessons`, `transcript_segments`. Files under `AUDIO_DIR`.
 
-Tests: `e2e/audio-import.spec.ts`.
+Tests: `e2e/audio-import.spec.ts`, `e2e/transcript-line-anki.spec.ts`.
 
 ## YouTube captions
 

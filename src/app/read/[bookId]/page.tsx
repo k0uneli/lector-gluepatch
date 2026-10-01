@@ -19,6 +19,7 @@ import {
   getLesson,
   getLessonsForCollection,
   getLessonSegments,
+  getLessonClip,
   lessonAudioUrl,
   lessonVideoUrl,
   isVideoLesson,
@@ -32,7 +33,15 @@ import {
   markVocabPushedToAnki,
 } from '@/lib/data-layer';
 import { phraseSelectionLimitPayload, showPlanLimitToast } from '@/lib/plan-limits';
-import { addWordCard, addClozeCard, addFormattedNote, buildSourceLinkHtml } from '@/lib/anki';
+import {
+  addWordCard,
+  addClozeCard,
+  addFormattedNote,
+  addSentenceCard,
+  buildSourceLinkHtml,
+  SENTENCE_CARD_TAG,
+} from '@/lib/anki';
+import type { TranscriptLine } from '@/components/AddLineToAnki';
 import {
   activeNoteFormat,
   formatPhraseDetails,
@@ -1086,6 +1095,46 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     [wordPanel, getAnkiDecks, ensureVocabEntry, ankiTransport, lessonPack, sentenceNoteFormat],
   );
 
+  // A transcript line as a sentence card: the AI translation of the line, and
+  // the line cut from the lesson's media as audio (server TTS for YouTube).
+  const addLineToAnki = useCallback(
+    async (line: TranscriptLine) => {
+      if (!lesson) return;
+      const { cloze: deckName } = getAnkiDecks();
+      const [phrase, clipData] = await Promise.all([
+        translatePhrase(line.text, line.context),
+        lesson.audioPath ? getLessonClip(lesson.id, line.startMs, line.endMs) : null,
+      ]);
+      const clip = clipData
+        ? { data: clipData, filename: `lector-clip-${lesson.id}-${line.startMs}-${line.endMs}.mp3` }
+        : undefined;
+      const definition2 = formatPhraseDetails(phrase);
+      const language = lessonPack.code;
+
+      // A line has no word to blank, so a cloze sentence format falls back to a Basic card.
+      const useFormat = sentenceNoteFormat && !isClozeFormat(sentenceNoteFormat);
+      const result = useFormat
+        ? await addFormattedNote(
+            deckName,
+            sentenceNoteFormat,
+            { word: '', sentence: line.text, definition: phrase.translation, definition2 },
+            { audioText: line.text, language, pack: lessonPack, clip, tags: [SENTENCE_CARD_TAG] },
+          )
+        : await addSentenceCard(deckName, line.text, phrase.translation, definition2, {
+            language,
+            clip,
+          });
+
+      if (result.audioFailed) toast.warning('Added to Anki without audio — no server voice.');
+      else if (sentenceNoteFormat && !useFormat) {
+        toast.info(
+          'Added as a Basic card: your sentence card is a cloze, and a line has no word to blank.',
+        );
+      }
+    },
+    [lesson, getAnkiDecks, lessonPack, sentenceNoteFormat],
+  );
+
   const retranslateWithAi = useCallback(async () => {
     setWordPanel((prev) => ({ ...prev, isLoading: true, error: null }));
     const isPhrase = wordPanel.word.includes(' ');
@@ -1331,6 +1380,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
             lesson={lesson}
             segments={segments}
             audioUrl={lessonAudioUrl(lesson.id)}
+            onAddLine={ankiTransport === 'ankiconnect' ? addLineToAnki : undefined}
             knownWordsMap={readerWordStates}
             wordPanelOpen={wordPanel.isOpen}
             onWordClick={handleWordClick}
@@ -1352,6 +1402,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
                 ? { url: lessonVideoUrl(lesson.id), segments }
                 : null
             }
+            onAddLine={ankiTransport === 'ankiconnect' ? addLineToAnki : undefined}
             headerAction={
               segments.length > 0 && !isVideoLesson(lesson) ? (
                 <button

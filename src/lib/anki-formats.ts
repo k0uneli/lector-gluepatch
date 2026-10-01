@@ -127,6 +127,8 @@ export function audioFieldNames(format: AnkiNoteFormat): string[] {
 /**
  * Render every mapped field except audio, which the caller fills once the
  * media file is stored. Throws when a cloze field cannot place its blank.
+ * With no target word, Word holds the sentence: Anki rejects a note whose
+ * first field is empty, and mining note types lead with the word field.
  */
 export function renderNoteFields(
   format: AnkiNoteFormat,
@@ -140,7 +142,7 @@ export function renderNoteFields(
   const render = (source: AnkiFieldSource): string => {
     switch (source) {
       case 'word':
-        return isolate(cleanWord);
+        return isolate(cleanWord || content.sentence);
       case 'sentence':
         return isolate(
           cleanWord

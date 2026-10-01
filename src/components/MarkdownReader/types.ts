@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Lesson, LessonSummary, WordState } from '@/types';
+import type { TranscriptLine } from '@/components/AddLineToAnki';
 
 /** Where a clicked word came from, when the lesson is a video transcript
  *  (#334). Threaded to the reader page so a mined card can carry the segment's
@@ -33,4 +34,6 @@ export interface MarkdownReaderProps {
   headerAction?: ReactNode;
   /** When set, renders an embedded video player with synced transcript. */
   videoInfo?: VideoInfo | null;
+  /** When set, transcript lines get a hover button that sends the line to Anki. */
+  onAddLine?: (line: TranscriptLine) => Promise<void>;
 }

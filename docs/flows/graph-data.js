@@ -346,7 +346,7 @@
     domain: "anki",
     md: "anki.md#push-to-anki",
     summary: "AnkiConnect addNote from the browser, or POST /api/anki/queue for the add-on.",
-    steps: ["fn:useAnkiTransport", "fn:addWordCard", "fn:addFormattedNote", "fn:queueForAnki", "route:anki-queue", "table:anki_pending"],
+    steps: ["fn:useAnkiTransport", "fn:addWordCard", "fn:addFormattedNote", "fn:addLineToAnki", "route:lessons-clip", "fn:queueForAnki", "route:anki-queue", "table:anki_pending"],
   });
   N("flow:anki-sync", "flow", "Sync Anki reviews", {
     domain: "anki",
@@ -685,6 +685,9 @@
   N("fn:queueForAnki", "fn", "queueForAnki", { path: "src/lib/anki-queue.ts" });
   N("fn:addWordCard", "fn", "addWordCard", { path: "src/lib/anki.ts" });
   N("fn:addFormattedNote", "fn", "addFormattedNote", { path: "src/lib/anki.ts" });
+  N("fn:addSentenceCard", "fn", "addSentenceCard", { path: "src/lib/anki.ts" });
+  N("fn:addLineToAnki", "fn", "ReadPage.addLineToAnki", { path: "src/app/read/[bookId]/page.tsx" });
+  N("file:add-line-to-anki", "file", "AddLineToAnki", { path: "src/components/AddLineToAnki/index.tsx", domain: "anki" });
   N("fn:renderNoteFields", "fn", "renderNoteFields", { path: "src/lib/anki-formats.ts" });
   N("fn:synthesizeSpeech", "fn", "synthesizeSpeech", { path: "src/lib/tts.ts" });
   N("fn:useAnkiTransport", "fn", "useAnkiTransport", { path: "src/lib/anki-transport.ts" });
@@ -731,6 +734,7 @@
   N("route:lessons-progress", "route", "PUT /api/lessons/:id/progress", { path: "api/src/routes/lessons.ts" });
   N("route:lessons-segments", "route", "GET /api/lessons/:id/segments", { path: "api/src/routes/lessons.ts" });
   N("route:lessons-audio", "route", "GET /api/lessons/:id/audio", { path: "api/src/routes/lessons.ts" });
+  N("route:lessons-clip", "route", "GET /api/lessons/:id/clip", { path: "api/src/routes/lessons.ts" });
   N("route:known-words-get", "route", "GET /api/known-words", { path: "api/src/routes/known-words.ts" });
   N("route:known-words-post", "route", "POST /api/known-words", { path: "api/src/routes/known-words.ts" });
   N("route:import-epub", "route", "POST /api/import/epub", { path: "api/src/routes/import.ts" });
@@ -1239,6 +1243,16 @@
   edge("flow:anki-push", "fn:addWordCard", "calls");
   edge("fn:addWordCard", "file:anki-client", "in");
   edge("flow:anki-push", "fn:addFormattedNote", "calls");
+  edge("flow:anki-push", "fn:addLineToAnki", "calls");
+  edge("file:listen-along", "file:add-line-to-anki", "uses");
+  edge("file:transcript-reader", "file:add-line-to-anki", "uses");
+  edge("file:add-line-to-anki", "fn:addLineToAnki", "calls");
+  edge("fn:addLineToAnki", "file:read-page", "in");
+  edge("fn:addLineToAnki", "route:lessons-clip", "http");
+  edge("route:lessons-clip", "file:route-lessons", "in");
+  edge("fn:addLineToAnki", "fn:addFormattedNote", "calls");
+  edge("fn:addLineToAnki", "fn:addSentenceCard", "calls");
+  edge("fn:addSentenceCard", "file:anki-client", "in");
   edge("fn:addFormattedNote", "file:anki-client", "in");
   edge("fn:addFormattedNote", "fn:renderNoteFields", "calls");
   edge("fn:renderNoteFields", "file:anki-formats", "in");

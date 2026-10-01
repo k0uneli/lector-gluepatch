@@ -246,6 +246,60 @@ describe('audio lesson routes (#185)', () => {
     expect(response.status).toBe(404);
   });
 
+  test('GET /:id/clip rejects a span that is missing, reversed, or over 60 s', async () => {
+    await seedAudioLesson();
+    for (const query of [
+      '',
+      'startMs=1000',
+      'startMs=a&endMs=2000',
+      'startMs=-1&endMs=2000',
+      'startMs=2000&endMs=2000',
+      'startMs=1.5&endMs=2000',
+      'startMs=0&endMs=60001',
+    ]) {
+      const response = await app.request(`/lesson-1/clip?language=af&${query}`);
+      expect(response.status).toBe(400);
+    }
+  });
+
+  test('GET /:id/clip 404s for a text lesson and an unknown lesson', async () => {
+    seedLesson();
+    expect((await app.request('/lesson-1/clip?language=af&startMs=0&endMs=1000')).status).toBe(404);
+    expect((await app.request('/missing/clip?language=af&startMs=0&endMs=1000')).status).toBe(404);
+  });
+
+  test('GET /:id/clip answers 500 when the stored file cannot be cut', async () => {
+    await seedAudioLesson();
+    const response = await app.request('/lesson-1/clip?language=af&startMs=0&endMs=1000');
+    expect(response.status).toBe(500);
+  });
+
+  test.skipIf(Bun.which('ffmpeg') === null)('GET /:id/clip returns the span as MP3', async () => {
+    const audioPath = await seedAudioLesson();
+    const proc = Bun.spawn(
+      [
+        'ffmpeg',
+        '-v',
+        'error',
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=duration=5',
+        '-f',
+        'mp3',
+        audioPath,
+      ],
+      { stdout: 'ignore', stderr: 'ignore' },
+    );
+    expect(await proc.exited).toBe(0);
+
+    const response = await app.request('/lesson-1/clip?language=af&startMs=2000&endMs=4000');
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('audio/mpeg');
+    expect((await response.arrayBuffer()).byteLength).toBeGreaterThan(1000);
+  });
+
   test('POST /:id/retry-transcription re-queues only failed lessons', async () => {
     await seedAudioLesson('error');
     db.prepare(

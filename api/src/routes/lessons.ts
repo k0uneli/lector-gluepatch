@@ -15,6 +15,7 @@ import { analyserReadings } from '../lib/ja-morphology';
 import { resolveLanguage } from '../lib/active-language';
 import { getCurrentUserId } from '../lib/user';
 import { audioContentType, deleteAudioFile, isVideoFile, videoContentType } from '../lib/audio-files';
+import { cutAudioClip, MAX_CLIP_MS } from '../lib/audio-clip';
 import { entitlements, planLimitResponse } from '../lib/entitlements';
 import { aggregateGrowthCheck, growingRowCheck, lessonTextBytes } from '../lib/storage-limits';
 import {
@@ -234,6 +235,42 @@ app.get('/:id/video', async (c) => {
       'Content-Length': String(size),
       'Accept-Ranges': 'bytes',
     },
+  });
+});
+
+// GET /api/lessons/:id/clip?startMs=&endMs=
+// One transcript line of an uploaded audio or video lesson, as MP3, for an Anki card.
+app.get('/:id/clip', async (c) => {
+  const userId = getCurrentUserId(c);
+  const id = c.req.param('id');
+  const lang = resolveLanguage(c.req.query('language'), userId);
+  const startMs = Number(c.req.query('startMs'));
+  const endMs = Number(c.req.query('endMs'));
+  if (
+    !Number.isSafeInteger(startMs) ||
+    !Number.isSafeInteger(endMs) ||
+    startMs < 0 ||
+    endMs <= startMs ||
+    endMs - startMs > MAX_CLIP_MS
+  ) {
+    return c.json(
+      {
+        error: `startMs and endMs must be whole ms, 0 ≤ startMs < endMs, at most ${MAX_CLIP_MS} ms apart`,
+      },
+      400,
+    );
+  }
+  const lesson = db
+    .prepare('SELECT audioPath FROM lessons WHERE id = ? AND userId = ? AND language = ?')
+    .get(id, userId, lang) as { audioPath: string | null } | undefined;
+  if (!lesson?.audioPath || !(await Bun.file(lesson.audioPath).exists())) {
+    return c.json({ error: 'Lesson has no audio' }, 404);
+  }
+  const clip = await cutAudioClip(lesson.audioPath, startMs, endMs);
+  if (!clip) return c.json({ error: 'Could not cut the clip' }, 500);
+  return new Response(clip, {
+    status: 200,
+    headers: { 'Content-Type': 'audio/mpeg', 'Content-Length': String(clip.byteLength) },
   });
 });
 

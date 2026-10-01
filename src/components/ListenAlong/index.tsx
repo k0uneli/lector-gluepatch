@@ -31,6 +31,7 @@ import { foldWord, getLanguageConfig, isValidLanguageCode } from '@/lib/language
 import { useActiveLanguage } from '@/utils/hooks';
 import { splitWords } from '@/components/MarkdownReader/utils';
 import WordCell from '@/components/WordCell';
+import AddLineToAnki, { type TranscriptLine } from '@/components/AddLineToAnki';
 import { createAudioUnitPlayer, type UnitPlayer } from './drill-player';
 import { activeSegmentIndex, formatClock, nextPlaybackRate } from './utils';
 
@@ -45,6 +46,8 @@ export interface ListenAlongProps {
   onWordClick: (word: string, sentence: string) => void;
   /** Back to reading mode. */
   onExit: () => void;
+  /** When set, each line gets a hover button that sends it to Anki. */
+  onAddLine?: (line: TranscriptLine) => Promise<void>;
 }
 
 type PlayerMode = 'continuous' | 'shadow';
@@ -62,6 +65,7 @@ export default function ListenAlong({
   wordPanelOpen = false,
   onWordClick,
   onExit,
+  onAddLine,
 }: ListenAlongProps) {
   const activeLang = useActiveLanguage();
   // Tokenize by the LESSON's language, same rule as MarkdownReader.
@@ -244,47 +248,65 @@ export default function ListenAlong({
           {segments.map((segment, idx) => {
             const isActive = idx === activeIdx;
             return (
-              <p
-                key={segment.idx}
-                ref={(el) => {
-                  if (el) segmentRefs.current.set(idx, el);
-                  else segmentRefs.current.delete(idx);
-                }}
-                data-testid="listen-segment"
-                data-active-segment={isActive || undefined}
-                onClick={(event) => {
-                  // Row tap (not on a word) jumps playback to this sentence.
-                  if ((event.target as HTMLElement).closest('[data-testid="reader-word"]')) return;
-                  if (mode === 'shadow') {
-                    setShadowIdx(idx);
-                    playSegment(idx);
-                  } else {
-                    handleSeek(segment.startMs);
-                  }
-                }}
-                className={`my-1 cursor-pointer rounded-xl px-3 py-2 text-lg leading-[1.9] transition-colors sm:text-xl ${
-                  isActive
-                    ? 'bg-[color-mix(in_srgb,var(--clay)_12%,transparent)]'
-                    : 'hover:bg-accent/50'
-                }`}
-              >
-                {splitWords(segment.text, pack).map((part, partIndex) =>
-                  part.isWord ? (
-                    <WordCell
-                      key={partIndex}
-                      text={part.text}
-                      state={knownWordsMap.get(foldWord(part.text, pack))}
-                      isActive={
-                        effectiveActiveWord?.segmentIdx === segment.idx &&
-                        effectiveActiveWord.wordIndex === partIndex
-                      }
-                      onActivate={(text) => handleWordTap(segment, partIndex, text)}
+              <div key={segment.idx} className="group flex items-start gap-1">
+                <p
+                  ref={(el) => {
+                    if (el) segmentRefs.current.set(idx, el);
+                    else segmentRefs.current.delete(idx);
+                  }}
+                  data-testid="listen-segment"
+                  data-active-segment={isActive || undefined}
+                  onClick={(event) => {
+                    // Row tap (not on a word) jumps playback to this sentence.
+                    if ((event.target as HTMLElement).closest('[data-testid="reader-word"]'))
+                      return;
+                    if (mode === 'shadow') {
+                      setShadowIdx(idx);
+                      playSegment(idx);
+                    } else {
+                      handleSeek(segment.startMs);
+                    }
+                  }}
+                  className={`my-1 flex-1 cursor-pointer rounded-xl px-3 py-2 text-lg leading-[1.9] transition-colors sm:text-xl ${
+                    isActive
+                      ? 'bg-[color-mix(in_srgb,var(--clay)_12%,transparent)]'
+                      : 'hover:bg-accent/50'
+                  }`}
+                >
+                  {splitWords(segment.text, pack).map((part, partIndex) =>
+                    part.isWord ? (
+                      <WordCell
+                        key={partIndex}
+                        text={part.text}
+                        state={knownWordsMap.get(foldWord(part.text, pack))}
+                        isActive={
+                          effectiveActiveWord?.segmentIdx === segment.idx &&
+                          effectiveActiveWord.wordIndex === partIndex
+                        }
+                        onActivate={(text) => handleWordTap(segment, partIndex, text)}
+                      />
+                    ) : (
+                      <span key={partIndex}>{part.text}</span>
+                    ),
+                  )}
+                </p>
+                {onAddLine && (
+                  <div className="my-1 pt-2">
+                    <AddLineToAnki
+                      line={{
+                        text: segment.text,
+                        startMs: segment.startMs,
+                        endMs: segment.endMs,
+                        context: segments
+                          .slice(Math.max(0, idx - 1), idx + 2)
+                          .map((s) => s.text)
+                          .join(' '),
+                      }}
+                      onAdd={onAddLine}
                     />
-                  ) : (
-                    <span key={partIndex}>{part.text}</span>
-                  ),
+                  </div>
                 )}
-              </p>
+              </div>
             );
           })}
         </div>

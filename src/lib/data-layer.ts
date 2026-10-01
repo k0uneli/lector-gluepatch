@@ -391,6 +391,28 @@ export function lessonVideoUrl(lessonId: string): string {
   return apiUrl(`/api/lessons/${lessonId}/video`);
 }
 
+/**
+ * One span of an audio or video lesson as base64 MP3, cut on the server.
+ * Null when the lesson has no media file.
+ */
+export async function getLessonClip(
+  lessonId: string,
+  startMs: number,
+  endMs: number,
+): Promise<string | null> {
+  const res = await apiFetch(
+    `/api/lessons/${lessonId}/clip?startMs=${Math.round(startMs)}&endMs=${Math.round(endMs)}`,
+  );
+  if (res.status === 404) return null;
+  await requireOk(res, 'Could not cut the audio clip');
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
 /** Whether a lesson's uploaded file is a video container (mp4/webm). */
 export function isVideoLesson(lesson: { audioPath?: string | null }): boolean {
   if (!lesson.audioPath) return false;

@@ -143,6 +143,8 @@ Two transports exist. Open Settings, then Anki Integration, then Connection.
 
 **Your own note types with AnkiConnect.** Open Settings, then Anki Integration, then Card formats. Select a language and a card. The word card is for one word. The sentence card is for a phrase or a sentence that you select. Select a note type, then select a Lector value for each field. The values are Word, Sentence, Sentence (cloze), Definition, Definition #2, Image, and Pronunciation. Pronunciation adds audio from the server voice. A sentence card is a cloze card only when a field uses Sentence (cloze). The Lector Sync add-on always uses the `Lector` note types.
 
+**Transcript lines with AnkiConnect.** In a video, YouTube, or listen-along transcript, move the pointer over a line. Click the plus button to add the line as a sentence card. The AI translation goes into Definition. For an uploaded audio or video file, the server cuts the line from the file with ffmpeg, and the clip goes into Pronunciation. A YouTube line uses the server voice.
+
 ## Configuration
 
 If you want a file, copy `.env.example` to `.env`. Compose also reads the process environment.

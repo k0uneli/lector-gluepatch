@@ -12,6 +12,7 @@ import { wordReading, type AnnotationMode } from './annotation';
 import { readerWrapClass } from './wrap';
 import { proseStyleVars, type ProseStyle } from '@/lib/prose-style';
 import WordCell from '@/components/WordCell';
+import AddLineToAnki, { type TranscriptLine } from '@/components/AddLineToAnki';
 
 /** mm:ss / h:mm:ss label for a second offset (mirrors the server helper). */
 function formatTimestamp(totalSeconds: number): string {
@@ -46,6 +47,8 @@ interface TranscriptReaderProps {
   onActivateWord: (word: ActiveReaderWord) => void;
   onClearPhrase: () => void;
   onSeek: (seconds: number, segmentIndex: number) => void;
+  /** When set, each line gets a hover button that sends it to Anki. */
+  onAddLine?: (line: TranscriptLine) => Promise<void>;
 }
 
 /**
@@ -72,6 +75,7 @@ function TranscriptReader({
   onActivateWord,
   onClearPhrase,
   onSeek,
+  onAddLine,
 }: TranscriptReaderProps) {
   // Whether the reading sits out of flow above the word, or in the line box
   // where ruby layout widens the word to fit it. See `annotationOverhang`.
@@ -167,6 +171,20 @@ function TranscriptReader({
                 );
               })}
             </p>
+            {onAddLine && (
+              <AddLineToAnki
+                line={{
+                  text: segment.text,
+                  startMs: source.startMs,
+                  endMs: source.endMs,
+                  context: segments
+                    .slice(Math.max(0, segmentIndex - 1), segmentIndex + 2)
+                    .map((s) => s.text)
+                    .join(' '),
+                }}
+                onAdd={onAddLine}
+              />
+            )}
           </div>
         );
       })}

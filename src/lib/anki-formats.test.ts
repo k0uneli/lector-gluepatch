@@ -107,6 +107,17 @@ describe('renderNoteFields', () => {
     expect(renderNoteFields(format, { ...content, word: '' }, ru).Sentence).toBe(content.sentence);
   });
 
+  it('fills Word with the sentence when there is no target word', () => {
+    const format: AnkiNoteFormat = {
+      modelName: 'vocabsieve-notes-with-url',
+      fields: { Word: 'word', Sentence: 'sentence' },
+    };
+    expect(renderNoteFields(format, { ...content, word: '' }, ru)).toEqual({
+      Word: content.sentence,
+      Sentence: content.sentence,
+    });
+  });
+
   it('isolates target-language text for right-to-left packs', () => {
     const format: AnkiNoteFormat = { modelName: 'W', fields: { Word: 'word' } };
     const ar = getLanguageConfig('ar');

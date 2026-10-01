@@ -6998,6 +6998,125 @@
         "x-token-scope": "collections:read"
       }
     },
+    "/api/lessons/{id}/clip": {
+      "get": {
+        "operationId": "getApiLessonsByIdClip",
+        "summary": "Cut a clip from the audio of a lesson",
+        "description": "Returns one span of an uploaded audio or video lesson as mono MP3, for example one transcript line. The clip starts a little before `startMs` and ends a little after `endMs`.",
+        "tags": [
+          "Library"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Lesson identifier.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/LanguageQuery"
+          },
+          {
+            "name": "startMs",
+            "in": "query",
+            "required": true,
+            "description": "Start of the span, in milliseconds.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "endMs",
+            "in": "query",
+            "required": true,
+            "description": "End of the span, in milliseconds. At most 60000 after `startMs`.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The clip.",
+            "content": {
+              "audio/mpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The span is not valid, or it is longer than 60 seconds."
+          },
+          "401": {
+            "description": "The credential is missing, invalid or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token does not carry the scope this endpoint needs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The lesson has no audio, or the stored file is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A plan limit or a rate limit stopped the call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The API failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "PersonalAccessToken": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "x-token-scope": "collections:read"
+      }
+    },
     "/api/lessons/{id}/progress": {
       "put": {
         "operationId": "putApiLessonsByIdProgress",

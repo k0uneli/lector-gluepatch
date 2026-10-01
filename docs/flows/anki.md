@@ -10,7 +10,7 @@ The add-on is on AnkiWeb as [Lector Sync](https://ankiweb.net/shared/info/109873
 
 **App domain:** Anki
 
-Sources: reader drawer, vocab export, practice feedback.
+Sources: reader drawer, vocab export, practice feedback, transcript line button.
 
 ```mermaid
 flowchart TD
@@ -37,8 +37,10 @@ flowchart TD
 | AnkiConnect (legacy) | `src/lib/anki.ts` | `addWordCard`, `addClozeCard`, `addBasicCard`, `addFormattedNote`, `ankiRequest` |
 | Card formats | `src/lib/anki-formats.ts` | `loadAnkiNoteFormats`, `activeNoteFormat`, `renderNoteFields` |
 | Card format settings | `src/app/settings/components/AnkiCardFormats/index.tsx` | `AnkiCardFormats` |
+| Transcript line | `src/components/AddLineToAnki/index.tsx` | `AddLineToAnki` |
+| Line clip | `api/src/routes/lessons.ts`, `api/src/lib/audio-clip.ts` | `GET /:id/clip`, `cutAudioClip` |
 | Queue | `src/lib/anki-queue.ts` | `queueForAnki` |
-| Reader | `src/app/read/[bookId]/page.tsx` | `addWordToAnki`, `addClozeToAnki` |
+| Reader | `src/app/read/[bookId]/page.tsx` | `addWordToAnki`, `addClozeToAnki`, `addLineToAnki` |
 | Vocab | `src/app/vocab/page.tsx` | `handleExportToAnki` |
 | Settings | `src/app/settings/components/AnkiSettings/index.tsx` | `AnkiSettings` |
 | API | `api/src/routes/anki.ts` | `POST /queue`, `GET /pending`, `POST /ack` |
@@ -55,6 +57,8 @@ flowchart TD
 - On AnkiConnect, `settings.ankiNoteFormats` can set a word card and a sentence card for each language. Each card uses any note type, and maps its fields to Word, Sentence, Sentence (cloze), Definition, Definition #2, Image, or Pronunciation. The add-on transport ignores this setting.
 - A Pronunciation field gets server TTS through `storeMediaFile`. With no server voice, the note is added and the field stays empty.
 - A sentence card without a Sentence (cloze) field is not a cloze. The reader then makes the target word optional.
+- A transcript line button (AnkiConnect only) sends the line to the sentence card, with the AI phrase translation. `GET /api/lessons/:id/clip` cuts the line from the uploaded audio or video with ffmpeg, as MP3. A YouTube lesson has no media file, so it uses server TTS.
+- A line has no target word. A cloze sentence format falls back to a Basic card. Line cards carry the tag `lector-sentence`, not `lector`, so `syncWordStates` never reads them.
 - `GET /api/anki` and `POST /api/anki` still proxy AnkiConnect. The web client does not use them for export.
 
 ### Tables
@@ -63,7 +67,7 @@ flowchart TD
 
 ### Tests
 
-`e2e/reader-anki.spec.ts`, `e2e/vocab-anki-export.spec.ts`, `e2e/anki-addon.spec.ts`, `e2e/anki-card-formats.spec.ts`.
+`e2e/reader-anki.spec.ts`, `e2e/vocab-anki-export.spec.ts`, `e2e/anki-addon.spec.ts`, `e2e/anki-card-formats.spec.ts`, `e2e/transcript-line-anki.spec.ts`.
 
 ## Sync Anki reviews
 
@@ -94,7 +98,7 @@ flowchart TD
 | API | `api/src/routes/anki.ts` | `POST /reviews`, `POST /sync-reviews` |
 | Add-on | `anki-addon/lector/sync.py` | `post_reviews`, `flush_reviews` |
 
-For a note type in `settings.ankiNoteFormats`, `syncWordStates` reads the word from the field mapped to Word.
+For a note type in `settings.ankiNoteFormats`, `syncWordStates` reads the word from the field mapped to Word. A card of that note type with an empty Word field is skipped.
 
 Upgrade only. The path never demotes and never touches `ignored`. New Anki cards (`type === 0`) skip. Map: Learning to `level1`, Relearning to `level2`, Young to `level4`, Mature to `known`.
 

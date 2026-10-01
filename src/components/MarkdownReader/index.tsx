@@ -42,6 +42,7 @@ export default function MarkdownReader({
   nextLesson,
   headerAction,
   videoInfo,
+  onAddLine,
 }: MarkdownReaderProps) {
   const router = useRouter();
   const activeLang = useActiveLanguage();
@@ -542,6 +543,7 @@ export default function MarkdownReader({
               onActivateWord={setActiveWord}
               onClearPhrase={clearPhraseHighlight}
               onSeek={handleSeek}
+              onAddLine={onAddLine}
             />
           </>
         ) : videoTranscriptSegments ? (
@@ -622,6 +624,7 @@ export default function MarkdownReader({
               onActivateWord={setActiveWord}
               onClearPhrase={clearPhraseHighlight}
               onSeek={handleSeek}
+              onAddLine={onAddLine}
             />
           </>
         ) : (

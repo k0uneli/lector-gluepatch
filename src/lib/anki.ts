@@ -434,11 +434,50 @@ function hashText(text: string): string {
  * server TTS of `audioText`; `audioFailed` reports that no voice was available
  * and the note was added without it.
  */
+/**
+ * Tag for cards with no target word. Not `lector`, so syncWordStates never
+ * reads the sentence as a vocab word.
+ */
+export const SENTENCE_CARD_TAG = 'lector-sentence';
+
+/** Base64 audio cut from the lesson's own media, used in place of TTS. */
+export interface AnkiAudioClip {
+  data: string;
+  filename: string;
+}
+
+/** Store the note's audio in Anki's media folder and return its [sound:] tag, or null without a voice. */
+async function storeNoteAudio(
+  text: string,
+  language: string,
+  clip?: AnkiAudioClip,
+): Promise<string | null> {
+  if (clip) {
+    const stored = await ankiRequest<string>('storeMediaFile', { ...clip });
+    return `[sound:${stored}]`;
+  }
+  const audio = await synthesizeSpeech(text, language);
+  if (!audio) return null;
+  const ext = audio.contentType.includes('wav') ? 'wav' : 'mp3';
+  const stored = await ankiRequest<string>('storeMediaFile', {
+    filename: `lector-${language}-${hashText(text)}.${ext}`,
+    data: audio.audioContent,
+  });
+  return `[sound:${stored}]`;
+}
+
 export async function addFormattedNote(
   deckName: string,
   format: AnkiNoteFormat,
   content: AnkiCardContent,
-  options: { audioText: string; language: string; pack?: LanguageConfig },
+  options: {
+    audioText: string;
+    language: string;
+    pack?: LanguageConfig;
+    clip?: AnkiAudioClip;
+    /** Replaces the `lector` tags. A card without `lector` stays out of syncWordStates. */
+    tags?: string[];
+  },
 ): Promise<{ noteId: number; audioFailed: boolean }> {
   await ensureDeckExists(deckName);
   const fields = renderNoteFields(format, content, options.pack);
@@ -446,15 +485,10 @@ export async function addFormattedNote(
   let audioFailed = false;
   const audioFields = audioFieldNames(format);
   const audioText = options.audioText.trim();
-  if (audioFields.length > 0 && audioText) {
-    const audio = await synthesizeSpeech(audioText, options.language);
-    if (audio) {
-      const ext = audio.contentType.includes('wav') ? 'wav' : 'mp3';
-      const stored = await ankiRequest<string>('storeMediaFile', {
-        filename: `lector-${options.language}-${hashText(audioText)}.${ext}`,
-        data: audio.audioContent,
-      });
-      for (const name of audioFields) fields[name] = `[sound:${stored}]`;
+  if (audioFields.length > 0 && (options.clip || audioText)) {
+    const sound = await storeNoteAudio(audioText, options.language, options.clip);
+    if (sound) {
+      for (const name of audioFields) fields[name] = sound;
     } else {
       audioFailed = true;
     }
@@ -466,13 +500,54 @@ export async function addFormattedNote(
       modelName: format.modelName,
       fields,
       options: { allowDuplicate: true },
-      tags: ['lector', 'vocabulary', ...(isClozeFormat(format) ? ['cloze'] : [])],
+      tags: options.tags ?? ['lector', 'vocabulary', ...(isClozeFormat(format) ? ['cloze'] : [])],
     },
+  }).catch((error: unknown) => {
+    if (error instanceof Error && /note because it is empty/i.test(error.message)) {
+      throw new Error(
+        `Anki rejected the note: the first field of '${format.modelName}' is empty. In Settings → Anki Integration → Card formats, map it to a value that is always filled, such as Sentence.`,
+      );
+    }
+    throw error;
   });
   if (noteId === null) {
     throw new Error(`Failed to add note — check that the '${format.modelName}' note type exists`);
   }
   return { noteId, audioFailed };
+}
+
+/**
+ * Add a sentence as a Basic card with no target word: the sentence and its
+ * audio on the front, the translation on the back.
+ */
+export async function addSentenceCard(
+  deckName: string,
+  sentence: string,
+  translation: string,
+  detailsHtml: string,
+  options: { language: string; clip?: AnkiAudioClip },
+): Promise<{ noteId: number; audioFailed: boolean }> {
+  await ensureDeckExists(deckName);
+  const sound = await storeNoteAudio(sentence.trim(), options.language, options.clip);
+  const details = detailsHtml ? `<br><br><small>${detailsHtml}</small>` : '';
+  const noteId = await ankiRequest<number | null>('addNote', {
+    note: {
+      deckName,
+      modelName: 'Basic',
+      fields: {
+        Front: `${bdi(sentence)}${sound ? `<br>${sound}` : ''}`,
+        Back: `${translation}${details}`,
+      },
+      options: { allowDuplicate: true },
+      tags: [SENTENCE_CARD_TAG],
+    },
+  });
+  if (noteId === null) {
+    throw new Error(
+      "Failed to add note — check that 'Basic' note type exists with 'Front' and 'Back' fields",
+    );
+  }
+  return { noteId, audioFailed: sound === null };
 }
 
 /**
@@ -634,16 +709,18 @@ export async function syncWordStates(): Promise<
 
   for (const card of cardsInfo) {
     const custom = customFields.get(card.modelName);
-    const customWord = custom?.word ? stripHtml(card.fields[custom.word]?.value || '') : '';
-    if (custom && customWord) {
-      const sentence = custom.sentence ? card.fields[custom.sentence]?.value || '' : '';
-      const definition = custom.definition ? card.fields[custom.definition]?.value || '' : '';
-      recordCard(
-        customWord,
-        card,
-        stripHtml(sentence.replace(/\{\{c\d+::([^}]+)\}\}/g, '$1')),
-        stripHtml(definition),
-      );
+    if (custom) {
+      const customWord = custom.word ? stripHtml(card.fields[custom.word]?.value || '') : '';
+      if (customWord) {
+        const sentence = custom.sentence ? card.fields[custom.sentence]?.value || '' : '';
+        const definition = custom.definition ? card.fields[custom.definition]?.value || '' : '';
+        recordCard(
+          customWord,
+          card,
+          stripHtml(sentence.replace(/\{\{c\d+::([^}]+)\}\}/g, '$1')),
+          stripHtml(definition),
+        );
+      }
       continue;
     }
 
