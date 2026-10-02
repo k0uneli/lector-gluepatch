@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   activeNoteFormat,
-  audioFieldNames,
+  fieldsWithSource,
   formatPhraseDetails,
   formatStructuredEntry,
   guessFieldMapping,
@@ -43,9 +43,12 @@ describe('guessFieldMapping', () => {
     });
   });
 
-  it('matches word audio to word cards and sentence audio to sentence cards', () => {
+  it('maps word audio and sentence audio to the two audio slots on a word card', () => {
     const fields = ['WordAudio', 'SentenceAudio'];
-    expect(guessFieldMapping(fields, 'word')).toEqual({ WordAudio: 'audio' });
+    expect(guessFieldMapping(fields, 'word')).toEqual({
+      WordAudio: 'audio',
+      SentenceAudio: 'sentenceAudio',
+    });
     expect(guessFieldMapping(fields, 'sentence')).toEqual({ SentenceAudio: 'audio' });
   });
 
@@ -129,7 +132,8 @@ describe('format helpers', () => {
   it('reports cloze formats and audio fields', () => {
     expect(isClozeFormat(wordFormat)).toBe(false);
     expect(isClozeFormat({ modelName: 'C', fields: { Text: 'sentenceCloze' } })).toBe(true);
-    expect(audioFieldNames(wordFormat)).toEqual(['ExpressionAudio']);
+    expect(fieldsWithSource(wordFormat, 'audio')).toEqual(['ExpressionAudio']);
+    expect(fieldsWithSource(wordFormat, 'sentenceAudio')).toEqual([]);
   });
 
   it('renders the full AI entry with escaped text', () => {

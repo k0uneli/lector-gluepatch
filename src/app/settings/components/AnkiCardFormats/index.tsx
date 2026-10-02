@@ -33,12 +33,16 @@ const CARD_KINDS: ReadonlyArray<{ value: AnkiCardKind; label: string; hint: stri
 ];
 
 const SOURCE_HELP: ReadonlyArray<[string, string]> = [
-  ['Word', 'the word you added, or the word you picked in a sentence'],
+  ['Word', 'the word you added; on a sentence card with no word picked, the sentence'],
   ['Sentence', 'the sentence, with the word in bold'],
   ['Sentence (cloze)', 'the sentence, with the word blanked as {{c1::…}}'],
   ['Definition', 'the short meaning; an AI result replaces the on-device dictionary'],
   ['Definition #2', 'the full AI entry or phrase breakdown, when there is one'],
-  ['Pronunciation', 'server audio of the word, or of the sentence on a sentence card'],
+  ['Pronunciation', 'audio of the word on a word card, or of the sentence on a sentence card'],
+  [
+    'Sentence audio',
+    'audio of the whole sentence: the line cut from an audio or video lesson, otherwise server audio',
+  ],
 ];
 
 export default function AnkiCardFormats({ connected }: { connected: boolean }) {

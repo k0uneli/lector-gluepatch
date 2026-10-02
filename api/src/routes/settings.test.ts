@@ -90,7 +90,10 @@ describe('settings write validation (#233)', () => {
   test('ankiNoteFormats accepts per-language note formats with known field values', async () => {
     const formats = {
       ru: {
-        word: { modelName: 'Mining', fields: { Expression: 'word', Audio: 'audio' } },
+        word: {
+          modelName: 'Mining',
+          fields: { Expression: 'word', Audio: 'audio', SentenceAudio: 'sentenceAudio' },
+        },
         sentence: { modelName: 'Cloze', fields: { Text: 'sentenceCloze' } },
       },
     };

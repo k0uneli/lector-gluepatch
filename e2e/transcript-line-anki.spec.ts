@@ -312,4 +312,51 @@ test.describe('Add a transcript line to Anki', () => {
     await expect(page.getByText('LLM unavailable')).toBeVisible();
     expect(calls.some((c) => c.action === 'addNote')).toBe(false);
   });
+
+  test('a word card gets the word TTS and the line clip as sentence audio', async ({ page }) => {
+    const calls = await mockAnkiConnect(page);
+    const ttsTexts: string[] = [];
+    await page.route('**/api/tts', async (route) => {
+      ttsTexts.push(JSON.parse(route.request().postData() || '{}').text);
+      await route.fulfill({ json: { audioContent: 'SUQzBAAAAAAA', contentType: 'audio/mp3' } });
+    });
+    await page.route('**/api/translate/gloss', (route) =>
+      route.fulfill({ status: 200, contentType: 'text/plain', body: 'welcome' }),
+    );
+    await saveFormats(page, {
+      af: {
+        word: {
+          modelName: 'vocabsieve-notes-with-url',
+          fields: {
+            Word: 'word',
+            Sentence: 'sentence',
+            Pronunciation: 'audio',
+            SentenceAudio: 'sentenceAudio',
+          },
+        },
+      },
+    });
+    const lessonId = await openListenAlong(page);
+
+    await page.getByTestId('listen-segment').nth(1).getByTestId('reader-word').first().click();
+    const addBtn = page.getByTestId('translation-drawer').getByTestId('add-to-anki-btn');
+    await expect(addBtn).toBeVisible({ timeout: 8000 });
+    await addBtn.click();
+    await expect(addBtn).toHaveText('✓ Added to Anki', { timeout: 15000 });
+
+    const files = calls
+      .filter((c) => c.action === 'storeMediaFile')
+      .map((c) => c.params!.filename!);
+    expect(files).toHaveLength(2);
+    expect(files[0]).toMatch(/^lector-af-[0-9a-f]{8}\.mp3$/);
+    expect(files[1]).toBe(`lector-clip-${lessonId}-2000-4000.mp3`);
+    expect(ttsTexts).toContain('Welkom');
+
+    const note = calls.find((c) => c.action === 'addNote')!.params!.note!;
+    expect(note.modelName).toBe('vocabsieve-notes-with-url');
+    expect(note.fields!.Word).toBe('Welkom');
+    expect(note.fields!.Sentence).toBe('<b>Welkom</b> by die potgooi.');
+    expect(note.fields!.Pronunciation).toBe(`[sound:${files[0]}]`);
+    expect(note.fields!.SentenceAudio).toBe(`[sound:${files[1]}]`);
+  });
 });

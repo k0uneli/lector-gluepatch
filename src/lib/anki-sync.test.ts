@@ -13,13 +13,21 @@ function stubServers(
   formats: AnkiNoteFormats,
   cards: unknown[],
   addNoteError: string | null = null,
+  ttsVoice = false,
 ) {
   const ankiCalls: AnkiBody[] = [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith('/api/settings/ankiConnectUrl')) return Response.json(null);
     if (url.endsWith('/api/settings/ankiNoteFormats')) return Response.json(formats);
-    if (url.endsWith('/api/tts')) return Response.json({ error: 'no voice', fallback: true });
+    if (url.endsWith('/api/tts')) {
+      const { text } = JSON.parse(String(init?.body)) as { text: string };
+      return Response.json(
+        ttsVoice
+          ? { audioContent: btoa(encodeURIComponent(text)), contentType: 'audio/mp3' }
+          : { error: 'no voice', fallback: true },
+      );
+    }
     const body = JSON.parse(String(init?.body)) as AnkiBody;
     ankiCalls.push(body);
     const results: Record<string, unknown> = {
@@ -160,5 +168,88 @@ describe('addFormattedNote', () => {
     await expect(
       addFormattedNote('Russian', format, line, { audioText: '', language: 'ru' }),
     ).rejects.toThrow('AnkiConnect error: model was not found: vocabsieve-notes-with-url');
+  });
+});
+
+describe('addFormattedNote audio slots', () => {
+  const format = {
+    modelName: 'Mining',
+    fields: {
+      Word: 'word' as const,
+      Sentence: 'sentence' as const,
+      Pronunciation: 'audio' as const,
+      SentenceAudio: 'sentenceAudio' as const,
+    },
+  };
+  const card = { word: 'кот', sentence: 'Мой кот спит.', definition: 'cat', definition2: '' };
+  const clip = { data: 'SUQz', filename: 'lector-clip-l1-1000-3000.mp3' };
+
+  const noteFields = (calls: AnkiBody[]) =>
+    (calls.find((c) => c.action === 'addNote')?.params?.note as { fields: Record<string, string> })
+      .fields;
+  const stored = (calls: AnkiBody[]) =>
+    calls.filter((c) => c.action === 'storeMediaFile').map((c) => c.params?.filename);
+
+  it('puts the word TTS in Pronunciation and the line clip in Sentence audio', async () => {
+    const calls = stubServers({}, [], null, true);
+
+    const result = await addFormattedNote('Russian', format, card, {
+      audioText: 'кот',
+      sentenceClip: clip,
+      language: 'ru',
+    });
+
+    expect(result.audioFailed).toBe(false);
+    const files = stored(calls);
+    expect(files).toHaveLength(2);
+    expect(files[0]).toMatch(/^lector-ru-[0-9a-f]{8}\.mp3$/);
+    expect(files[1]).toBe(clip.filename);
+    expect(noteFields(calls).Pronunciation).toBe(`[sound:${files[0]}]`);
+    expect(noteFields(calls).SentenceAudio).toBe(`[sound:${clip.filename}]`);
+  });
+
+  it('uses TTS of the whole sentence when there is no clip', async () => {
+    const calls = stubServers({}, [], null, true);
+
+    await addFormattedNote('Russian', format, card, { audioText: 'кот', language: 'ru' });
+
+    const files = stored(calls);
+    expect(files).toHaveLength(2);
+    expect(files[0]).not.toBe(files[1]);
+    expect(noteFields(calls).SentenceAudio).toBe(`[sound:${files[1]}]`);
+  });
+
+  it('stores one file when both slots get the same clip', async () => {
+    const calls = stubServers({}, [], null, true);
+
+    await addFormattedNote(
+      'Russian',
+      format,
+      { ...card, word: '' },
+      {
+        audioText: card.sentence,
+        clip,
+        sentenceClip: clip,
+        language: 'ru',
+      },
+    );
+
+    expect(stored(calls)).toEqual([clip.filename]);
+    expect(noteFields(calls).Pronunciation).toBe(`[sound:${clip.filename}]`);
+    expect(noteFields(calls).SentenceAudio).toBe(`[sound:${clip.filename}]`);
+  });
+
+  it('reports missing audio when a slot gets no voice', async () => {
+    const calls = stubServers({}, []);
+
+    const result = await addFormattedNote('Russian', format, card, {
+      audioText: 'кот',
+      sentenceClip: clip,
+      language: 'ru',
+    });
+
+    expect(result.audioFailed).toBe(true);
+    expect(noteFields(calls).Pronunciation).toBe('');
+    expect(noteFields(calls).SentenceAudio).toBe(`[sound:${clip.filename}]`);
   });
 });

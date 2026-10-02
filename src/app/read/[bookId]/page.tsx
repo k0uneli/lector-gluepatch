@@ -40,10 +40,12 @@ import {
   addSentenceCard,
   buildSourceLinkHtml,
   SENTENCE_CARD_TAG,
+  type AnkiAudioClip,
 } from '@/lib/anki';
 import type { TranscriptLine } from '@/components/AddLineToAnki';
 import {
   activeNoteFormat,
+  fieldsWithSource,
   formatPhraseDetails,
   isClozeFormat,
   loadAnkiNoteFormats,
@@ -948,6 +950,19 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     trackOnboardingVocab,
   ]);
 
+  // One transcript line cut from the lesson's media file. Undefined without a
+  // file, or when the cut fails, so the card falls back to TTS.
+  const getLineClip = useCallback(
+    async (startMs: number, endMs: number): Promise<AnkiAudioClip | undefined> => {
+      if (!lesson?.audioPath) return undefined;
+      const data = await getLessonClip(lesson.id, startMs, endMs).catch(() => null);
+      return data
+        ? { data, filename: `lector-clip-${lesson.id}-${startMs}-${endMs}.mp3` }
+        : undefined;
+    },
+    [lesson],
+  );
+
   const addWordToAnki = useCallback(async () => {
     const { basic: deckName } = getAnkiDecks();
     const wordMeaning =
@@ -993,11 +1008,15 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
 
     let noteId: number;
     if (wordNoteFormat) {
+      const sentenceClip =
+        source && fieldsWithSource(wordNoteFormat, 'sentenceAudio').length > 0
+          ? await getLineClip(source.startMs, source.endMs)
+          : undefined;
       const result = await addFormattedNote(
         deckName,
         wordNoteFormat,
         { word: wordPanel.word, sentence: wordPanel.sentence, ...pickWordDefinitions(wordPanel) },
-        { audioText: wordPanel.word, language: lessonPack.code, pack: lessonPack },
+        { audioText: wordPanel.word, sentenceClip, language: lessonPack.code, pack: lessonPack },
       );
       noteId = result.noteId;
       if (result.audioFailed) toast.warning('Added to Anki without audio — no server voice.');
@@ -1017,7 +1036,15 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
         ? { ...prev.existingEntry, pushedToAnki: true, ankiNoteId: noteId }
         : { ...entry, pushedToAnki: true, ankiNoteId: noteId },
     }));
-  }, [wordPanel, getAnkiDecks, ensureVocabEntry, ankiTransport, wordNoteFormat, lessonPack]);
+  }, [
+    wordPanel,
+    getAnkiDecks,
+    ensureVocabEntry,
+    ankiTransport,
+    wordNoteFormat,
+    lessonPack,
+    getLineClip,
+  ]);
 
   const addClozeToAnki = useCallback(
     async (blankWord: string) => {
@@ -1101,13 +1128,10 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     async (line: TranscriptLine) => {
       if (!lesson) return;
       const { cloze: deckName } = getAnkiDecks();
-      const [phrase, clipData] = await Promise.all([
+      const [phrase, clip] = await Promise.all([
         translatePhrase(line.text, line.context),
-        lesson.audioPath ? getLessonClip(lesson.id, line.startMs, line.endMs) : null,
+        getLineClip(line.startMs, line.endMs),
       ]);
-      const clip = clipData
-        ? { data: clipData, filename: `lector-clip-${lesson.id}-${line.startMs}-${line.endMs}.mp3` }
-        : undefined;
       const definition2 = formatPhraseDetails(phrase);
       const language = lessonPack.code;
 
@@ -1118,7 +1142,14 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
             deckName,
             sentenceNoteFormat,
             { word: '', sentence: line.text, definition: phrase.translation, definition2 },
-            { audioText: line.text, language, pack: lessonPack, clip, tags: [SENTENCE_CARD_TAG] },
+            {
+              audioText: line.text,
+              clip,
+              sentenceClip: clip,
+              language,
+              pack: lessonPack,
+              tags: [SENTENCE_CARD_TAG],
+            },
           )
         : await addSentenceCard(deckName, line.text, phrase.translation, definition2, {
             language,
@@ -1132,7 +1163,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
         );
       }
     },
-    [lesson, getAnkiDecks, lessonPack, sentenceNoteFormat],
+    [lesson, getAnkiDecks, lessonPack, sentenceNoteFormat, getLineClip],
   );
 
   const retranslateWithAi = useCallback(async () => {

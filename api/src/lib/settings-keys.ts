@@ -115,6 +115,7 @@ const ANKI_FIELD_SOURCES = new Set([
   'definition2',
   'image',
   'audio',
+  'sentenceAudio',
 ]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

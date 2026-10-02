@@ -17,7 +17,8 @@ export type AnkiFieldSource =
   | 'definition'
   | 'definition2'
   | 'image'
-  | 'audio';
+  | 'audio'
+  | 'sentenceAudio';
 
 export interface AnkiNoteFormat {
   modelName: string;
@@ -36,6 +37,7 @@ export const FIELD_SOURCE_OPTIONS: ReadonlyArray<{ value: AnkiFieldSource; label
   { value: 'definition2', label: 'Definition #2' },
   { value: 'image', label: 'Image (left empty)' },
   { value: 'audio', label: 'Pronunciation (audio)' },
+  { value: 'sentenceAudio', label: 'Sentence audio' },
 ];
 
 export interface AnkiCardContent {
@@ -80,7 +82,7 @@ export function guessFieldSource(
   const key = fieldName.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (key === 'expressionaudio' || key === 'wordaudio')
     return kind === 'word' ? 'audio' : undefined;
-  if (key === 'sentenceaudio') return kind === 'sentence' ? 'audio' : undefined;
+  if (key === 'sentenceaudio') return kind === 'sentence' ? 'audio' : 'sentenceAudio';
   return GUESSES[key];
 }
 
@@ -120,8 +122,8 @@ export function isClozeFormat(format: AnkiNoteFormat): boolean {
   return Object.values(format.fields).includes('sentenceCloze');
 }
 
-export function audioFieldNames(format: AnkiNoteFormat): string[] {
-  return Object.keys(format.fields).filter((name) => format.fields[name] === 'audio');
+export function fieldsWithSource(format: AnkiNoteFormat, source: AnkiFieldSource): string[] {
+  return Object.keys(format.fields).filter((name) => format.fields[name] === source);
 }
 
 /**
@@ -168,6 +170,7 @@ export function renderNoteFields(
         return content.definition2;
       case 'image':
       case 'audio':
+      case 'sentenceAudio':
         return '';
     }
   };

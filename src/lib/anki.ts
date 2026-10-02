@@ -12,11 +12,12 @@ import { getActivePack } from './data-layer';
 import type { WordState } from '@/types';
 import { apiFetch } from './api-base';
 import {
-  audioFieldNames,
+  fieldsWithSource,
   isClozeFormat,
   loadAnkiNoteFormats,
   renderNoteFields,
   type AnkiCardContent,
+  type AnkiFieldSource,
   type AnkiNoteFormat,
   type AnkiNoteFormats,
 } from './anki-formats';
@@ -471,10 +472,13 @@ export async function addFormattedNote(
   format: AnkiNoteFormat,
   content: AnkiCardContent,
   options: {
+    /** Pronunciation: `clip` when given, else TTS of this text. */
     audioText: string;
+    clip?: AnkiAudioClip;
+    /** Sentence audio: this clip when given, else TTS of the card's sentence. */
+    sentenceClip?: AnkiAudioClip;
     language: string;
     pack?: LanguageConfig;
-    clip?: AnkiAudioClip;
     /** Replaces the `lector` tags. A card without `lector` stays out of syncWordStates. */
     tags?: string[];
   },
@@ -483,16 +487,18 @@ export async function addFormattedNote(
   const fields = renderNoteFields(format, content, options.pack);
 
   let audioFailed = false;
-  const audioFields = audioFieldNames(format);
-  const audioText = options.audioText.trim();
-  if (audioFields.length > 0 && (options.clip || audioText)) {
-    const sound = await storeNoteAudio(audioText, options.language, options.clip);
-    if (sound) {
-      for (const name of audioFields) fields[name] = sound;
-    } else {
-      audioFailed = true;
-    }
-  }
+  const stored = new Map<string, Promise<string | null>>();
+  const fillAudio = async (source: AnkiFieldSource, text: string, clip?: AnkiAudioClip) => {
+    const names = fieldsWithSource(format, source);
+    if (names.length === 0 || (!clip && !text)) return;
+    const key = clip ? `clip:${clip.filename}` : `tts:${text}`;
+    if (!stored.has(key)) stored.set(key, storeNoteAudio(text, options.language, clip));
+    const sound = await stored.get(key);
+    if (!sound) audioFailed = true;
+    else for (const name of names) fields[name] = sound;
+  };
+  await fillAudio('audio', options.audioText.trim(), options.clip);
+  await fillAudio('sentenceAudio', content.sentence.trim(), options.sentenceClip);
 
   const noteId = await ankiRequest<number | null>('addNote', {
     note: {

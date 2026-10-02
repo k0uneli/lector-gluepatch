@@ -32,6 +32,7 @@ import { useActiveLanguage } from '@/utils/hooks';
 import { splitWords } from '@/components/MarkdownReader/utils';
 import WordCell from '@/components/WordCell';
 import AddLineToAnki, { type TranscriptLine } from '@/components/AddLineToAnki';
+import type { WordSource } from '@/components/MarkdownReader/types';
 import { createAudioUnitPlayer, type UnitPlayer } from './drill-player';
 import { activeSegmentIndex, formatClock, nextPlaybackRate } from './utils';
 
@@ -43,7 +44,7 @@ export interface ListenAlongProps {
   audioUrl: string;
   knownWordsMap: Map<string, WordState>;
   wordPanelOpen?: boolean;
-  onWordClick: (word: string, sentence: string) => void;
+  onWordClick: (word: string, sentence: string, source?: WordSource) => void;
   /** Back to reading mode. */
   onExit: () => void;
   /** When set, each line gets a hover button that sends it to Anki. */
@@ -199,7 +200,11 @@ export default function ListenAlong({
       const scroller = scrollContainerRef.current;
       if (scroller) scroller.scrollTo({ top: scroller.scrollTop, behavior: 'auto' });
       setActiveWord({ segmentIdx: segment.idx, wordIndex });
-      onWordClick(text, segment.text);
+      onWordClick(text, segment.text, {
+        sourceUrl: '',
+        startMs: segment.startMs,
+        endMs: segment.endMs,
+      });
     },
     [onWordClick, unitPlayer],
   );

@@ -56,6 +56,7 @@ flowchart TD
 - The add-on upserts by `LectorId`. The browser uses note types Basic and Cloze with tag `lector`.
 - On AnkiConnect, `settings.ankiNoteFormats` can set a word card and a sentence card for each language. Each card uses any note type, and maps its fields to Word, Sentence, Sentence (cloze), Definition, Definition #2, Image, or Pronunciation. The add-on transport ignores this setting.
 - A Pronunciation field gets server TTS through `storeMediaFile`. With no server voice, the note is added and the field stays empty.
+- A Sentence audio field gets the whole sentence. When the word came from an audio or video transcript line, that is the line's clip from `GET /api/lessons/:id/clip`. Otherwise it is server TTS of the sentence.
 - A sentence card without a Sentence (cloze) field is not a cloze. The reader then makes the target word optional.
 - A transcript line button (AnkiConnect only) sends the line to the sentence card, with the AI phrase translation. `GET /api/lessons/:id/clip` cuts the line from the uploaded audio or video with ffmpeg, as MP3. A YouTube lesson has no media file, so it uses server TTS.
 - A line has no target word. A cloze sentence format falls back to a Basic card. Line cards carry the tag `lector-sentence`, not `lector`, so `syncWordStates` never reads them.
