@@ -21,7 +21,11 @@ import {
 import { hasAudio, speak } from '@/lib/tts';
 import { playCorrectSound, playIncorrectSound } from '@/lib/sounds';
 import { translateGloss, translateWord } from '@/lib/claude';
-import { lookupWordRemote, type ExpandedDictionaryEntry } from '@/lib/dictionary-client';
+import {
+  entryMeaning,
+  lookupWordRemote,
+  type ExpandedDictionaryEntry,
+} from '@/lib/dictionary-client';
 import { splitTrailingPunctuation } from '@/lib/words';
 import { isComposing } from '@/lib/keyboard';
 import {
@@ -304,7 +308,7 @@ export default function PracticePage() {
       if (dictEntry && dictEntry.senses.length > 0) {
         setWordTooltip({
           word: cleanWord,
-          translation: dictEntry.senses.map((s) => s.gloss).join('; '),
+          translation: entryMeaning(dictEntry),
           partOfSpeech: dictEntry.senses[0]?.partOfSpeech || null,
           dictEntry,
           isLoading: false,

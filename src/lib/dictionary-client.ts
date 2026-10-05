@@ -18,8 +18,28 @@ export interface ExpandedDictionaryEntry {
   senses: Array<{ partOfSpeech: string; gloss: string }>;
   relatedForms?: Array<{ form: string; relation: string }>;
   lemmaInfo?: { stem: string; label: string };
+  /** Lemmas the senses name ("… of слы́шать"), with their own senses. */
+  lemmaEntries?: Array<{ word: string; senses: Array<{ partOfSpeech: string; gloss: string }> }>;
   /** `dict` = built-in kaikki dict, `cache` = user-learned AI translation. */
   source?: 'dict' | 'cache';
+}
+
+/**
+ * The meaning to save for an entry: its first `count` glosses. A form-of entry
+ * ("… of слы́шать") leads with its lemma's meaning, which the form-of line lacks.
+ */
+export function entryMeaning(
+  entry: Pick<ExpandedDictionaryEntry, 'senses' | 'lemmaEntries'>,
+  count = Infinity,
+): string {
+  const glosses = (senses: ExpandedDictionaryEntry['senses']) =>
+    senses
+      .slice(0, count)
+      .map((s) => s.gloss)
+      .join('; ');
+  const own = glosses(entry.senses);
+  const lemma = entry.lemmaEntries?.[0];
+  return lemma ? `${glosses(lemma.senses)} — ${own}` : own;
 }
 
 /**
@@ -81,7 +101,9 @@ export interface CacheAcceptedTranslationInput {
  * The session lookup cache is invalidated for the word so the next click
  * re-fetches and picks up the freshly-cached entry (now with `source: 'cache'`).
  */
-export async function cacheAcceptedTranslation(input: CacheAcceptedTranslationInput): Promise<void> {
+export async function cacheAcceptedTranslation(
+  input: CacheAcceptedTranslationInput,
+): Promise<void> {
   if (!input.word || !input.senses?.length) return;
   invalidateLookupCache(input.word);
   try {
@@ -108,9 +130,8 @@ export function entryToLegacyTranslation(entry: ExpandedDictionaryEntry): {
   partOfSpeech: string | null;
 } {
   const first = entry.senses[0];
-  const allGlosses = entry.senses.map((s) => s.gloss).join('; ');
   return {
-    translation: allGlosses || first?.gloss || '',
+    translation: entryMeaning(entry),
     partOfSpeech: first?.partOfSpeech || null,
   };
 }

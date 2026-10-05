@@ -12,6 +12,7 @@ import { ChevronRight, RefreshCw, Sparkles, Volume2, X, Zap } from 'lucide-react
 import TargetText from '@/components/TargetText';
 import NestedWordButton from './components/NestedWordButton';
 import Gloss from './components/Gloss';
+import LemmaSenses from './components/LemmaSenses';
 import { lookupAnnouncement } from './lookup-announcement';
 
 export { type ExpandedDictionaryEntry } from './types';
@@ -315,6 +316,11 @@ export default function TranslationDrawer({
                       </div>
                     </li>
                   ))}
+                  {entry?.lemmaEntries && (
+                    <li>
+                      <LemmaSenses lemmaEntries={entry.lemmaEntries} onLookupWord={onLookupWord} />
+                    </li>
+                  )}
                 </ol>
               ) : fallbackTranslation ? (
                 <div>

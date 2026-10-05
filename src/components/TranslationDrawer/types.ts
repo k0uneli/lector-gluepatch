@@ -13,6 +13,8 @@ export interface ExpandedDictionaryEntry {
   senses: Array<{ partOfSpeech: string; gloss: string }>;
   relatedForms?: Array<{ form: string; relation: string }>;
   lemmaInfo?: { stem: string; label: string };
+  /** Lemmas the senses name ("… of слы́шать"), with their own senses. */
+  lemmaEntries?: Array<{ word: string; senses: Array<{ partOfSpeech: string; gloss: string }> }>;
   /** `dict` = built-in kaikki dict, `cache` = user-learned AI translation. */
   source?: 'dict' | 'cache';
 }

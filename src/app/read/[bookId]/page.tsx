@@ -58,6 +58,7 @@ import { translateWord, translatePhrase, streamWordGloss, enrichWord } from '@/l
 import {
   lookupWordRemote,
   cacheAcceptedTranslation,
+  entryMeaning,
   type ExpandedDictionaryEntry,
 } from '@/lib/dictionary-client';
 import { speak } from '@/lib/tts';
@@ -457,7 +458,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
         if (requestId !== translationRequestId.current) return;
 
         if (dictEntry && dictEntry.senses.length > 0) {
-          const translation = dictEntry.senses.map((s) => s.gloss).join('; ');
+          const translation = entryMeaning(dictEntry);
           setWordPanel((prev) => ({
             ...prev,
             translation,
@@ -966,7 +967,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   const addWordToAnki = useCallback(async () => {
     const { basic: deckName } = getAnkiDecks();
     const wordMeaning =
-      wordPanel.dictEntry?.senses[0]?.gloss ??
+      (wordPanel.dictEntry?.senses.length ? entryMeaning(wordPanel.dictEntry, 1) : null) ??
       wordPanel.aiStructured?.senses[0]?.gloss ??
       wordPanel.translation ??
       '';

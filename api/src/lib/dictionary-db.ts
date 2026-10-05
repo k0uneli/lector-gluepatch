@@ -88,6 +88,8 @@ export interface ExpandedDictionaryEntry {
   senses: Array<{ partOfSpeech: string; gloss: string }>;
   relatedForms?: Array<{ form: string; relation: string }>;
   lemmaInfo?: { stem: string; label: string };
+  /** Lemmas this entry's form-of glosses name ("… of слы́шать"), with their own senses. */
+  lemmaEntries?: Array<{ word: string; senses: Array<{ partOfSpeech: string; gloss: string }> }>;
   /** `dict` = built-in kaikki dict; `cache` = user-learned AI translation. */
   source?: 'dict' | 'cache';
 }
@@ -504,6 +506,60 @@ function buildEntry(
   if (row.etymology) entry.etymology = row.etymology;
   if (related.length) entry.relatedForms = related;
   if (lemmaInfo) entry.lemmaInfo = lemmaInfo;
+  return entry;
+}
+
+const MAX_LEMMA_ENTRIES = 3;
+const MAX_LEMMA_SENSES = 6;
+
+// Wiktionary marks stress with U+0301 and U+0300; dictionary keys carry neither.
+const STRESS_MARKS = /[\u0300\u0301]/g;
+const STRESS_MARKED_LANGUAGES = new Set(['ru', 'uk']);
+
+function stripStressMarks(text: string): string {
+  return text.normalize('NFD').replace(STRESS_MARKS, '').normalize('NFC');
+}
+
+/**
+ * The entries of the lemmas `entry`'s glosses refer to, in gloss order. A lemma
+ * counts only when the inflection table links `key` to it, so an ordinary
+ * "… of X" phrase never pulls in an unrelated headword.
+ */
+function withLemmaEntries(
+  entry: ExpandedDictionaryEntry,
+  stmts: Stmts,
+  key: string,
+): ExpandedDictionaryEntry {
+  const lemmas = new Set(
+    (stmts.selectInflectionLemmas.all(key) as Array<{ lemma: string }>)
+      .map((r) => r.lemma)
+      .filter((lemma) => lemma !== key),
+  );
+  if (lemmas.size === 0) return entry;
+  const glosses = stripStressMarks(
+    entry.senses
+      .map((s) => s.gloss)
+      .join(' ')
+      .toLowerCase(),
+  );
+  const mentioned = [...lemmas]
+    .map((lemma) => {
+      const escaped = stripStressMarks(lemma).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const at = glosses.search(new RegExp(`(?<![\\p{L}\\p{M}])${escaped}(?![\\p{L}\\p{M}])`, 'u'));
+      return { lemma, at };
+    })
+    .filter(({ at }) => at >= 0)
+    .sort((a, b) => a.at - b.at)
+    .slice(0, MAX_LEMMA_ENTRIES);
+  const lemmaEntries = mentioned
+    .map(({ lemma }) => ({
+      word: lemma,
+      senses: (stmts.selectSenses.all(lemma) as SenseRow[])
+        .slice(0, MAX_LEMMA_SENSES)
+        .map((s) => ({ partOfSpeech: s.pos || '', gloss: s.gloss })),
+    }))
+    .filter((lemmaEntry) => lemmaEntry.senses.length > 0);
+  if (lemmaEntries.length > 0) entry.lemmaEntries = lemmaEntries;
   return entry;
 }
 
@@ -1059,13 +1115,14 @@ function resolveWord(
   word: string,
   language: string,
 ): ExpandedDictionaryEntry | undefined {
-  const lower = foldKey(word, language);
+  const folded = foldKey(word, language);
+  const lower = STRESS_MARKED_LANGUAGES.has(language) ? stripStressMarks(folded) : folded;
   const stmts = getStmts(language);
 
   if (stmts) {
     // 1. Exact match
     const exact = stmts.selectEntry.get(lower) as EntryRow | undefined;
-    if (exact) return buildEntry(exact, stmts, lower);
+    if (exact) return withLemmaEntries(buildEntry(exact, stmts, lower), stmts, lower);
 
     // 1b. Trailing apostrophe (it: po' / de' / va' / da'). The tokenizer
     // never emits a joiner at a token edge, so the reader token is `po`
@@ -1120,7 +1177,9 @@ function resolveWord(
       const stripped = stripMarks(lower);
       if (stripped !== lower) {
         const exactStripped = stmts.selectEntry.get(stripped) as EntryRow | undefined;
-        if (exactStripped) return buildEntry(exactStripped, stmts, lower);
+        if (exactStripped) {
+          return withLemmaEntries(buildEntry(exactStripped, stmts, lower), stmts, stripped);
+        }
         const inflStripped = stmts.selectInflectionLemma.get(stripped) as
           | { lemma: string; type: string | null }
           | undefined;

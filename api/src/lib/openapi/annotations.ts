@@ -478,6 +478,26 @@ export const schemas: Record<string, JsonSchema> = {
         description: 'Set when the lookup matched an inflected form.',
         properties: { stem: { type: 'string' }, label: { type: 'string' } },
       },
+      lemmaEntries: {
+        type: 'array',
+        description:
+          'Set when the senses name a lemma ("… of слы́шать"). Each item holds the senses of one lemma, in the order the glosses name them.',
+        items: {
+          type: 'object',
+          properties: {
+            word: { type: 'string' },
+            senses: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: { partOfSpeech: { type: 'string' }, gloss: { type: 'string' } },
+                required: ['partOfSpeech', 'gloss'],
+              },
+            },
+          },
+          required: ['word', 'senses'],
+        },
+      },
       source: {
         type: 'string',
         enum: ['dict', 'cache'],

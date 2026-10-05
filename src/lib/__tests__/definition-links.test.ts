@@ -62,7 +62,9 @@ describe('findNestedWordRef — segmentation and punctuation', () => {
   });
 
   test('cuts at colon', () => {
-    expect(findNestedWordRef('partitive form of ander: else, other, different')?.word).toBe('ander');
+    expect(findNestedWordRef('partitive form of ander: else, other, different')?.word).toBe(
+      'ander',
+    );
   });
 
   test('strips trailing sentence punctuation from the word', () => {
@@ -79,8 +81,24 @@ describe('findNestedWordRef — segmentation and punctuation', () => {
 
   test('keeps Afrikaans diacritics and hyphens in the word', () => {
     expect(findNestedWordRef('preterite of hê; had')?.word).toBe('hê');
-    expect(findNestedWordRef('alternative form of agt-en-negentigste')?.word).toBe('agt-en-negentigste');
+    expect(findNestedWordRef('alternative form of agt-en-negentigste')?.word).toBe(
+      'agt-en-negentigste',
+    );
     expect(findNestedWordRef('plural of Algeriër')?.word).toBe('Algeriër');
+  });
+
+  test('Russian and Greek grammatical descriptors', () => {
+    expect(
+      findNestedWordRef(
+        'first-person singular present indicative imperfective of слы́шать (slýšatʹ)',
+      )?.word,
+    ).toBe('слы́шать');
+    expect(
+      findNestedWordRef('masculine singular past indicative perfective of сказа́ть')?.word,
+    ).toBe('сказа́ть');
+    expect(findNestedWordRef('inflection of ко́шка (kóška):')?.word).toBe('ко́шка');
+    expect(findNestedWordRef('female equivalent of актёр (aktjór)')?.word).toBe('актёр');
+    expect(findNestedWordRef('third-person singular dependent of λέω')?.word).toBe('λέω');
   });
 
   test('keyword match is case-insensitive', () => {
@@ -110,7 +128,9 @@ describe('findNestedWordRef — ordinary English "of" must not linkify', () => {
     ).toBeNull();
     expect(findNestedWordRef('initialism of National Party')).toBeNull();
     expect(
-      findNestedWordRef('Optionally forms the perfect tense of the verbs wees (“be”), trou (“marry”).'),
+      findNestedWordRef(
+        'Optionally forms the perfect tense of the verbs wees (“be”), trou (“marry”).',
+      ),
     ).toBeNull();
   });
 

@@ -5,6 +5,7 @@
 import { wrapWholeWord, type LanguageConfig } from './languages';
 import { splitTrailingPunctuation } from './words';
 import { getSetting } from './data-layer';
+import { entryMeaning, type ExpandedDictionaryEntry } from './dictionary-client';
 
 export const ANKI_NOTE_FORMATS_SETTING = 'ankiNoteFormats';
 
@@ -243,12 +244,12 @@ export function pickWordDefinitions(lookup: {
   translation: string | null;
   aiContextTranslation: string | null;
   aiStructured: StructuredEntry | null;
-  dictEntry: (StructuredEntry & { source?: 'dict' | 'cache' }) | null;
+  dictEntry: (StructuredEntry & Pick<ExpandedDictionaryEntry, 'source' | 'lemmaEntries'>) | null;
 }): { definition: string; definition2: string } {
   const definition =
     lookup.aiContextTranslation ??
     lookup.aiStructured?.senses[0]?.gloss ??
-    lookup.dictEntry?.senses[0]?.gloss ??
+    (lookup.dictEntry?.senses.length ? entryMeaning(lookup.dictEntry, 1) : null) ??
     lookup.translation ??
     '';
   const aiEntry =

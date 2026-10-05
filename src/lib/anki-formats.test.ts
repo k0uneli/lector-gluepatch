@@ -196,6 +196,30 @@ describe('pickWordDefinitions', () => {
     );
   });
 
+  it('leads a form-of entry with its lemma meaning', () => {
+    const formOf = {
+      senses: [
+        {
+          partOfSpeech: 'verb',
+          gloss: 'first-person singular present indicative imperfective of слы́шать (slýšatʹ)',
+        },
+      ],
+      lemmaEntries: [
+        {
+          word: 'слышать',
+          senses: [
+            { partOfSpeech: 'verb', gloss: 'to hear' },
+            { partOfSpeech: 'verb', gloss: 'to smell' },
+          ],
+        },
+      ],
+      source: 'dict' as const,
+    };
+    expect(pickWordDefinitions({ ...empty, dictEntry: formOf }).definition).toBe(
+      'to hear — first-person singular present indicative imperfective of слы́шать (slýšatʹ)',
+    );
+  });
+
   it('falls back to the plain translation', () => {
     expect(pickWordDefinitions({ ...empty, translation: 'too' }).definition).toBe('too');
   });

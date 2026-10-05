@@ -15,8 +15,8 @@ export interface NestedWordRef {
 
 // A gloss only counts as a form-of reference when the word right before "of"
 // is one of Wiktionary's form-of descriptors. Derived from a scan of every
-// "… of …" gloss in dictionary-af.db — anything outside this set ("city of",
-// "fear of", "made out of") is regular English and must not linkify.
+// "… of …" gloss in the af, ru and el dictionaries — anything outside this set
+// ("city of", "fear of", "made out of") is regular English and must not linkify.
 const FORM_OF_KEYWORDS = new Set([
   'plural',
   'singular',
@@ -41,6 +41,27 @@ const FORM_OF_KEYWORDS = new Set([
   'clipping',
   'feminine',
   'masculine',
+  'neuter',
+  'inflection',
+  'imperfective',
+  'perfective',
+  'imperfect',
+  'dependent',
+  'indicative',
+  'imperative',
+  'subjunctive',
+  'passive',
+  'active',
+  'nominative',
+  'genitive',
+  'dative',
+  'accusative',
+  'instrumental',
+  'prepositional',
+  'vocative',
+  'locative',
+  'variant',
+  'equivalent',
 ]);
 
 // Letters in any script (plus combining marks), hyphens and apostrophes —

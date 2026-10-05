@@ -40,12 +40,14 @@ flowchart TD
 
 `lookupWord` in `api/src/lib/dictionary-db.ts` calls `resolveWord`. Order:
 
-1. Exact key in `dictionary-{lang}.db` `entries`.
+1. Exact key in `dictionary-{lang}.db` `entries`. Russian and Ukrainian keys drop stress marks first.
 2. Inflection table. Then the lemma row.
 3. Language rules. Esperanto uses morphology. The Koine-Greek pack (`grc`) folds marks. Afrikaans strips affixes.
 4. User cache in `cached_entries`.
 
 If the pack file does not exist, the curated steps skip. Only the user cache can hit.
+
+An exact hit can be a form-of entry ("… of слы́шать"). When the inflection table links the key to a lemma that the glosses name, the entry carries `lemmaEntries`: each lemma with its own senses. The drawer shows them under the senses, and `entryMeaning` puts the lemma meaning first in the saved translation and the Anki Definition.
 
 ### Key files
 
@@ -57,7 +59,8 @@ If the pack file does not exist, the curated steps skip. Only the user cache can
 | Sentence | `src/components/MarkdownReader/ReaderArticle.tsx` | `findSentence` |
 | Drawer | `src/components/TranslationDrawer/index.tsx` | `TranslationDrawer` |
 | Gloss UI | `src/components/TranslationDrawer/components/Gloss/index.tsx` | `Gloss` |
-| Dict client | `src/lib/dictionary-client.ts` | `lookupWordRemote` |
+| Lemma senses | `src/components/TranslationDrawer/components/LemmaSenses/index.tsx` | `LemmaSenses` |
+| Dict client | `src/lib/dictionary-client.ts` | `lookupWordRemote`, `entryMeaning` |
 | LLM client | `src/lib/claude.ts` | `streamWordGloss`, `translateGloss` |
 | Fold | `src/lib/languages.ts` | `foldWord` |
 | API dict | `api/src/routes/dictionary.ts` | `GET /lookup` |
@@ -206,7 +209,7 @@ Tests: `e2e/reader-phrase-selection.spec.ts`, `e2e/reader-phrase-touch.spec.ts`.
 
 `handleNestedLookup` calls `handleWordClick(nestedWord, wordPanel.sentence)`. The call keeps the original sentence. A save after that still records the encounter.
 
-Tests: `e2e/nested-definitions.spec.ts`.
+Tests: `e2e/nested-definitions.spec.ts`, `e2e/form-of-lemma.spec.ts`, `api/src/lib/dictionary-db.lemma.test.ts`.
 
 ## Cache accepted translation
 
