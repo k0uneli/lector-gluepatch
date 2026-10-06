@@ -145,6 +145,8 @@ Two transports exist. Open Settings, then Anki Integration, then Connection.
 
 **Transcript lines with AnkiConnect.** In a video, YouTube, or listen-along transcript, move the pointer over a line. Click the plus button to add the line as a sentence card. The AI translation goes into Definition. For an uploaded audio or video file, the server cuts the line from the file with ffmpeg, and the clip goes into Pronunciation. A YouTube line uses the server voice.
 
+**Cloze practice.** Click a word to open its definition, then click Add to Anki to add a word card. After you answer, Add to Anki adds the sentence. The sentence button shows for a correct answer and for an incorrect answer.
+
 ## Configuration
 
 If you want a file, copy `.env.example` to `.env`. Compose also reads the process environment.

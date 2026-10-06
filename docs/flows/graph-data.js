@@ -687,6 +687,7 @@
   N("fn:addFormattedNote", "fn", "addFormattedNote", { path: "src/lib/anki.ts" });
   N("fn:addSentenceCard", "fn", "addSentenceCard", { path: "src/lib/anki.ts" });
   N("fn:addLineToAnki", "fn", "ReadPage.addLineToAnki", { path: "src/app/read/[bookId]/page.tsx" });
+  N("fn:addPracticeWordToAnki", "fn", "addPracticeWordToAnki", { path: "src/app/practice/add-word-to-anki.ts" });
   N("file:add-line-to-anki", "file", "AddLineToAnki", { path: "src/components/AddLineToAnki/index.tsx", domain: "anki" });
   N("fn:renderNoteFields", "fn", "renderNoteFields", { path: "src/lib/anki-formats.ts" });
   N("fn:synthesizeSpeech", "fn", "synthesizeSpeech", { path: "src/lib/tts.ts" });
@@ -1244,6 +1245,10 @@
   edge("fn:addWordCard", "file:anki-client", "in");
   edge("flow:anki-push", "fn:addFormattedNote", "calls");
   edge("flow:anki-push", "fn:addLineToAnki", "calls");
+  edge("flow:anki-push", "fn:addPracticeWordToAnki", "calls");
+  edge("file:practice-page", "fn:addPracticeWordToAnki", "calls");
+  edge("fn:addPracticeWordToAnki", "fn:addFormattedNote", "calls");
+  edge("fn:addPracticeWordToAnki", "fn:queueForAnki", "calls");
   edge("file:listen-along", "file:add-line-to-anki", "uses");
   edge("file:transcript-reader", "file:add-line-to-anki", "uses");
   edge("file:add-line-to-anki", "fn:addLineToAnki", "calls");

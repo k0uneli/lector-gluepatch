@@ -177,9 +177,10 @@ export default function ClozeFeedback({
 
       {/* Action buttons */}
       <div className="flex flex-wrap gap-3">
-        {isCorrect && (
+        {onAddToAnki && (
           <Button
             type="button"
+            data-testid="add-sentence-to-anki"
             onClick={onAddToAnki}
             disabled={isAddingToAnki || ankiAdded}
             variant="secondary"

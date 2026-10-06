@@ -40,7 +40,7 @@ export default function Feedback({
 
   // Handle add to Anki
   const handleAddToAnki = async () => {
-    if (!current || !feedbackData || !feedbackData.isCorrect || isAddingToAnki || ankiAdded) {
+    if (!current || !feedbackData || isAddingToAnki || ankiAdded) {
       return;
     }
 

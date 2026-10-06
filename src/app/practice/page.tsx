@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { CheckCircle, ChevronDown, Star } from 'lucide-react';
 import { DeckShuffle } from '@/components/Loaders';
 import TranslationDrawer, { TranslationDrawerSlot } from '@/components/TranslationDrawer';
@@ -90,6 +91,8 @@ import DictationFeedback from './components/Dictation/DictationFeedback';
 import VoiceAnswer from './components/VoiceAnswer';
 import { isVoiceInputSupported } from '@/lib/stt';
 import { lectorMode } from '@/lib/api-base';
+import { useAnkiTransport } from '@/lib/anki-transport';
+import { addPracticeWordToAnki, type PracticeWordLookup } from './add-word-to-anki';
 import {
   completeOnboarding,
   encounteredOnboardingTerms,
@@ -189,15 +192,16 @@ export default function PracticePage() {
   >('idle');
 
   // Word definition tooltip state
-  const [wordTooltip, setWordTooltip] = useState<{
-    word: string;
-    translation: string | null;
-    partOfSpeech: string | null;
-    dictEntry: ExpandedDictionaryEntry | null;
-    isLoading: boolean;
-    isContextLoading: boolean;
-    error: string | null;
-  } | null>(null);
+  const [wordTooltip, setWordTooltip] = useState<
+    | (PracticeWordLookup & {
+        partOfSpeech: string | null;
+        isLoading: boolean;
+        isContextLoading: boolean;
+        error: string | null;
+      })
+    | null
+  >(null);
+  const ankiTransport = useAnkiTransport();
 
   const inputRef = useRef<HTMLInputElement>(null);
   const submittingRef = useRef(false);
@@ -292,6 +296,8 @@ export default function PracticePage() {
         translation: null,
         partOfSpeech: null,
         dictEntry: null,
+        aiContextTranslation: null,
+        aiStructured: null,
         isLoading: true,
         isContextLoading: false,
         error: null,
@@ -311,6 +317,8 @@ export default function PracticePage() {
           translation: entryMeaning(dictEntry),
           partOfSpeech: dictEntry.senses[0]?.partOfSpeech || null,
           dictEntry,
+          aiContextTranslation: null,
+          aiStructured: null,
           isLoading: false,
           isContextLoading: false,
           error: null,
@@ -325,6 +333,8 @@ export default function PracticePage() {
           translation: result.translation,
           partOfSpeech: result.partOfSpeech || null,
           dictEntry: null,
+          aiContextTranslation: null,
+          aiStructured: null,
           isLoading: false,
           isContextLoading: false,
           error: null,
@@ -335,6 +345,8 @@ export default function PracticePage() {
           translation: null,
           partOfSpeech: null,
           dictEntry: null,
+          aiContextTranslation: null,
+          aiStructured: null,
           isLoading: false,
           isContextLoading: false,
           error: 'Please try again.',
@@ -360,6 +372,15 @@ export default function PracticePage() {
               translation: result.translation,
               partOfSpeech: result.partOfSpeech || prev.partOfSpeech,
               dictEntry: null,
+              aiContextTranslation: result.translation,
+              aiStructured: result.senses?.length
+                ? {
+                    senses: result.senses,
+                    ipa: result.ipa,
+                    etymology: result.etymology,
+                    relatedForms: result.relatedForms,
+                  }
+                : null,
               isContextLoading: false,
             }
           : prev,
@@ -368,6 +389,17 @@ export default function PracticePage() {
       setWordTooltip((prev) => (prev ? { ...prev, isContextLoading: false } : prev));
     }
   }, [wordTooltip, current]);
+
+  const addTooltipWordToAnki = useCallback(async () => {
+    if (!wordTooltip || !current || ankiTransport === 'unknown') return;
+    const { audioFailed } = await addPracticeWordToAnki(
+      wordTooltip,
+      current.sentence.sentence,
+      ankiTransport,
+      getActivePack(),
+    );
+    if (audioFailed) toast.warning('Added to Anki without audio — no server voice.');
+  }, [wordTooltip, current, ankiTransport]);
 
   // Generate MC options when current sentence or queue changes
   const generateMcOptionsForSentence = useCallback(
@@ -1762,6 +1794,7 @@ export default function PracticePage() {
           onSpeak={(text) => speak(text)}
           onRequestContextTranslation={requestContextTranslation}
           onLookupWord={handleWordClick}
+          onAddToAnki={ankiTransport === 'unknown' ? undefined : addTooltipWordToAnki}
         />
       </TranslationDrawerSlot>
     </div>
