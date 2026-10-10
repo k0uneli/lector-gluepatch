@@ -963,6 +963,48 @@ export function storedAcceptedCacheContentBytes(
 // lookupWord — exact → inflections → prefix → suffix → affix-strip → AI cache
 // ---------------------------------------------------------------------------
 
+// Closed-class parts of speech, as kaikki tags them.
+const GRAMMAR_POS = new Set(['pron', 'prep', 'conj', 'particle', 'det', 'article', 'num', 'postp']);
+const TO_BE_GLOSS = /^to be(?:\s*\(.*\))?\s*$/i;
+
+export interface WordClass {
+  /** The dictionary key the word folds to. */
+  key: string;
+  /** Lemmas the inflection table links the word to. */
+  lemmas: string[];
+  /** A closed-class word (pronoun, preposition…) or a form of "to be". */
+  grammar: boolean;
+}
+
+/** Classify words against the dictionary. Null when the language has no dictionary. */
+export function classifyWords(
+  words: readonly string[],
+  language: string,
+): Map<string, WordClass> | null {
+  const stmts = getStmts(language);
+  if (!stmts) return null;
+  const classes = new Map<string, WordClass>();
+  for (const word of words) {
+    if (classes.has(word)) continue;
+    const folded = foldKey(word, language);
+    const key = STRESS_MARKED_LANGUAGES.has(language) ? stripStressMarks(folded) : folded;
+    const lemmas = [
+      ...new Set(
+        (stmts.selectInflectionLemmas.all(key) as Array<{ lemma: string }>).map((r) => r.lemma),
+      ),
+    ].filter((lemma) => lemma !== key);
+    const grammar = [key, ...lemmas].some((w) =>
+      (stmts.selectSenses.all(w) as SenseRow[]).some(
+        (s) =>
+          (s.pos !== null && GRAMMAR_POS.has(s.pos)) ||
+          (s.pos === 'verb' && TO_BE_GLOSS.test(s.gloss)),
+      ),
+    );
+    classes.set(word, { key, lemmas, grammar });
+  }
+  return classes;
+}
+
 export function lookupWord(
   userId: string,
   word: string,

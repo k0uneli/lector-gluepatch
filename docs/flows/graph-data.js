@@ -260,6 +260,12 @@
     summary: "Same SRS persist. User types the full sentence after TTS. Pass threshold is 0.75.",
     steps: ["file:practice-page", "fn:speak", "fn:persistReview", "route:cloze-review"],
   });
+  N("flow:recall", "flow", "Recall", {
+    domain: "practice",
+    md: "practice.md#recall",
+    summary: "Daily challenge: translate AI-written English sentences built from vocab. AI grades; levels move.",
+    steps: ["file:recall-practice", "route:recall-today", "fn:buildRecallSentences", "route:recall-answer", "table:recall_items", "table:vocab"],
+  });
   N("flow:voice-cloze", "flow", "Voice cloze", {
     domain: "practice",
     md: "practice.md#voice-cloze",
@@ -754,6 +760,12 @@
   N("route:cloze-seed", "route", "POST /api/cloze/seed", { path: "api/src/routes/cloze.ts" });
   N("route:cloze-due", "route", "GET /api/cloze/due", { path: "api/src/routes/cloze.ts" });
   N("route:cloze-review", "route", "POST /api/cloze/:id/review", { path: "api/src/routes/cloze.ts" });
+  N("route:recall-today", "route", "POST /api/recall/today", { path: "api/src/routes/recall.ts" });
+  N("route:recall-answer", "route", "POST /api/recall/:day/:idx/answer", { path: "api/src/routes/recall.ts" });
+  N("route:recall-verdict", "route", "PUT /api/recall/:day/:idx/verdict", { path: "api/src/routes/recall.ts" });
+  N("file:recall-practice", "file", "RecallPractice", { path: "src/app/practice/components/Recall/index.tsx", domain: "practice" });
+  N("fn:buildRecallSentences", "fn", "buildRecallSentences", { path: "api/src/lib/recall.ts" });
+  N("fn:gradeRecallAnswer", "fn", "gradeRecallAnswer", { path: "api/src/lib/recall.ts" });
   N("route:cloze-put", "route", "PUT /api/cloze/:id", { path: "api/src/routes/cloze.ts" });
   N("route:journal-list", "route", "GET /api/journal", { path: "api/src/routes/journal.ts" });
   N("route:journal-create", "route", "POST /api/journal", { path: "api/src/routes/journal.ts" });
@@ -803,6 +815,7 @@
   N("table:chat_messages", "table", "chat_messages", { path: "api/src/db.ts" });
   N("table:cached_entries", "table", "cached_entries", { path: "api/src/db.ts" });
   N("table:dailyStats", "table", "dailyStats", { path: "api/src/db.ts" });
+  N("table:recall_items", "table", "recall_items", { path: "api/src/db.ts" });
   N("table:anki_pending", "table", "anki_pending", { path: "api/src/db.ts" });
   N("table:transcript_segments", "table", "transcript_segments", { path: "api/src/db.ts" });
   N("table:onboarding_progress", "table", "onboarding_progress", { path: "api/src/db.ts" });
@@ -890,7 +903,7 @@
     "flow:cache-translation",
   ]);
   domainFlows("vocabulary", ["flow:save-vocab", "flow:vocab-list", "flow:known-word-import"]);
-  domainFlows("practice", ["flow:practice-word", "flow:dictation", "flow:voice-cloze", "flow:cloze-drills", "flow:blacklist"]);
+  domainFlows("practice", ["flow:practice-word", "flow:dictation", "flow:recall", "flow:voice-cloze", "flow:cloze-drills", "flow:blacklist"]);
   domainFlows("journal", ["flow:journal-submit", "flow:journal-draft"]);
   domainFlows("tutor", ["flow:tutor-chat", "flow:cloze-explain"]);
   domainFlows("listen", ["flow:speak-word", "flow:listen-along", "flow:youtube-captions"]);
@@ -1156,6 +1169,21 @@
   edge("flow:practice-word", "flow:translate-word", "uses");
 
   edge("flow:dictation", "file:practice-page", "starts");
+  edge("flow:recall", "file:recall-practice", "starts");
+  edge("file:practice-page", "file:recall-practice", "opens");
+  edge("file:recall-practice", "route:recall-today", "http");
+  edge("file:recall-practice", "route:recall-answer", "http");
+  edge("file:recall-practice", "route:recall-verdict", "http");
+  edge("route:recall-today", "fn:buildRecallSentences", "calls");
+  edge("fn:buildRecallSentences", "fn:getProvider", "calls");
+  edge("route:recall-today", "table:recall_items", "writes");
+  edge("route:recall-answer", "fn:gradeRecallAnswer", "calls");
+  edge("fn:gradeRecallAnswer", "fn:getProvider", "calls");
+  edge("route:recall-answer", "table:recall_items", "writes");
+  edge("route:recall-answer", "table:vocab", "writes");
+  edge("route:recall-answer", "table:knownWords", "writes");
+  edge("route:recall-answer", "table:dailyStats", "writes");
+  edge("route:recall-verdict", "table:vocab", "writes");
   edge("flow:dictation", "fn:speak", "calls");
   edge("flow:dictation", "fn:persistReview", "calls");
   edge("flow:voice-cloze", "file:practice-page", "starts");

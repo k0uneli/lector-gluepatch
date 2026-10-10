@@ -72,6 +72,8 @@ export const TENANT_TABLES = [
   // with its lessons. (The audio files under DATA_DIR/audio stay on disk and
   // are keyed by lessonId, which adoption preserves.)
   'transcript_segments',
+  // Daily recall challenges: today's set and its graded answers.
+  'recall_items',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];

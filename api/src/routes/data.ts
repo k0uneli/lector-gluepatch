@@ -390,6 +390,7 @@ const packFor = packForLanguage;
 //   and only hashes are stored, which are useless on another instance
 // - billing_*, usage_counters, admin_*, classify_batches, anki_pending —
 //   operational state of THIS deployment, not portable learner data
+// - recall_items — the daily recall set; its outcome lives in vocab and dailyStats
 // - dictionaries, sentence banks, TTS audio cache — global shared content,
 //   re-derivable on any install (#216); the user's own accepted AI entries DO
 //   travel as acceptedDictionaryEntries

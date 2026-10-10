@@ -93,6 +93,7 @@ import { isVoiceInputSupported } from '@/lib/stt';
 import { lectorMode } from '@/lib/api-base';
 import { useAnkiTransport } from '@/lib/anki-transport';
 import { addPracticeWordToAnki, type PracticeWordLookup } from './add-word-to-anki';
+import RecallPractice from './components/Recall';
 import {
   completeOnboarding,
   encounteredOnboardingTerms,
@@ -242,7 +243,11 @@ export default function PracticePage() {
         // Load saved practice format (cloze vs dictation). A stored dictation
         // preference is ignored for languages without synthesized audio.
         const savedFormat = localStorage.getItem(PRACTICE_FORMAT_SETTING_KEY);
-        if (savedFormat === 'cloze' || (savedFormat === 'dictation' && hasAudio())) {
+        if (
+          savedFormat === 'cloze' ||
+          savedFormat === 'recall' ||
+          (savedFormat === 'dictation' && hasAudio())
+        ) {
           setPracticeFormat(savedFormat);
         }
 
@@ -976,14 +981,20 @@ export default function PracticePage() {
         {state === 'setup' && (
           <div className="py-6">
             <PageHeader
-              title={practiceFormat === 'dictation' ? 'Dictation Practice' : 'Cloze Practice'}
+              title={
+                practiceFormat === 'dictation'
+                  ? 'Dictation Practice'
+                  : practiceFormat === 'recall'
+                    ? 'Recall Practice'
+                    : 'Cloze Practice'
+              }
             ></PageHeader>
 
             {/* Practice format: Cloze (fill the blank) vs Dictation (hear the
                 sentence, type it back). Both share the collection / round size /
                 review options below. */}
             <div className="mb-6">
-              <div className="grid grid-cols-2 gap-2">
+              <div className={`grid gap-2 ${dictationAvailable ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 {/* Explicit aria-labels keep each button's accessible name to
                     just "Cloze"/"Dictation" — the descriptive subtitle stays
                     visible but doesn't leak into role-based locators (e.g. the
@@ -1011,6 +1022,17 @@ export default function PracticePage() {
                     </div>
                   </Button>
                 )}
+                <Button
+                  aria-label="Recall"
+                  onClick={() => handleSetPracticeFormat('recall')}
+                  variant={practiceFormat === 'recall' ? 'default' : 'secondary'}
+                  className="flex h-14 flex-col justify-center gap-0"
+                >
+                  <div>Recall</div>
+                  <div className="mt-0.5 text-[11px] font-normal opacity-75">
+                    Translate from English
+                  </div>
+                </Button>
               </div>
             </div>
 
@@ -1059,144 +1081,147 @@ export default function PracticePage() {
                 );
               })()}
 
-            {/* Learn New section */}
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <h2 className="mb-4 text-base font-semibold text-foreground">Learn New</h2>
+            {practiceFormat === 'recall' ? (
+              <RecallPractice />
+            ) : (
+              <div className="rounded-2xl border border-border bg-card p-5">
+                <h2 className="mb-4 text-base font-semibold text-foreground">Learn New</h2>
 
-              {/* Collection */}
-              <div className="mb-4">
-                <div className="grid grid-cols-3 gap-2">
-                  {VISIBLE_COLLECTIONS.map((coll) => {
-                    const count = collectionCounts?.[coll];
-                    return (
-                      <Button
-                        key={coll}
-                        onClick={() => setSelectedCollection(coll)}
-                        variant={selectedCollection === coll ? 'default' : 'secondary'}
-                        className="flex h-14 flex-col justify-center gap-0"
-                      >
-                        <div>{COLLECTION_LABELS[coll]}</div>
-                        {count && count.total > 0 && (
-                          <div className="mt-0.5 text-[11px] font-normal opacity-75">
-                            {count.mastered}/{count.total} mastered
-                          </div>
-                        )}
-                      </Button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Round size + Mode in a row */}
-              <div className="mb-4 flex flex-wrap gap-4">
-                <div className="flex-1">
-                  <label className="mb-2 block text-xs font-medium text-muted-foreground">
-                    Sentences
-                  </label>
-                  <div className="flex gap-1.5">
-                    {ROUND_SIZES.map((size) => (
-                      <Button
-                        key={size}
-                        size="sm"
-                        variant={roundSize === size ? 'default' : 'secondary'}
-                        onClick={() => {
-                          setOriginalRoundSize(size);
-                          setRoundSize(size);
-                        }}
-                      >
-                        {size}
-                      </Button>
-                    ))}
+                {/* Collection */}
+                <div className="mb-4">
+                  <div className="grid grid-cols-3 gap-2">
+                    {VISIBLE_COLLECTIONS.map((coll) => {
+                      const count = collectionCounts?.[coll];
+                      return (
+                        <Button
+                          key={coll}
+                          onClick={() => setSelectedCollection(coll)}
+                          variant={selectedCollection === coll ? 'default' : 'secondary'}
+                          className="flex h-14 flex-col justify-center gap-0"
+                        >
+                          <div>{COLLECTION_LABELS[coll]}</div>
+                          {count && count.total > 0 && (
+                            <div className="mt-0.5 text-[11px] font-normal opacity-75">
+                              {count.mastered}/{count.total} mastered
+                            </div>
+                          )}
+                        </Button>
+                      );
+                    })}
                   </div>
                 </div>
-                {/* Type/MC only applies to cloze — dictation is always
-                    type-the-whole-sentence. */}
-                {practiceFormat === 'cloze' && (
-                  <div className="">
+
+                {/* Round size + Mode in a row */}
+                <div className="mb-4 flex flex-wrap gap-4">
+                  <div className="flex-1">
                     <label className="mb-2 block text-xs font-medium text-muted-foreground">
-                      Mode
+                      Sentences
                     </label>
                     <div className="flex gap-1.5">
-                      <Button
-                        onClick={() => handleSetPracticeMode('type')}
-                        variant={practiceMode === 'type' ? 'default' : 'secondary'}
-                      >
-                        Type
-                      </Button>
-                      <Button
-                        onClick={() => handleSetPracticeMode('mc')}
-                        variant={practiceMode === 'mc' ? 'default' : 'secondary'}
-                      >
-                        MC
-                      </Button>
-                      {voiceOffered && (
+                      {ROUND_SIZES.map((size) => (
                         <Button
-                          onClick={() => handleSetPracticeMode('voice')}
-                          variant={practiceMode === 'voice' ? 'default' : 'secondary'}
-                          disabled={!voiceSupported}
-                          title={
-                            voiceSupported
-                              ? 'Say the missing word or the whole sentence'
-                              : 'Voice answers need a microphone and a secure page (HTTPS or localhost)'
-                          }
+                          key={size}
+                          size="sm"
+                          variant={roundSize === size ? 'default' : 'secondary'}
+                          onClick={() => {
+                            setOriginalRoundSize(size);
+                            setRoundSize(size);
+                          }}
                         >
-                          Voice
+                          {size}
                         </Button>
-                      )}
+                      ))}
                     </div>
                   </div>
-                )}
-                {practiceFormat === 'cloze' && drillsAvailable && (
-                  <div>
-                    <label className="mb-2 block text-xs font-medium text-muted-foreground">
-                      Blank
-                    </label>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={<Button variant="secondary" />}
-                        data-testid="cloze-drill"
-                        aria-label={`Blank: ${CLOZE_DRILL_OPTIONS[clozeDrill].label}`}
-                      >
-                        {CLOZE_DRILL_OPTIONS[clozeDrill].label}
-                        <ChevronDown />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-64">
-                        <DropdownMenuRadioGroup
-                          value={clozeDrill}
-                          onValueChange={(value) => handleSetClozeDrill(value as ClozeDrill)}
+                  {/* Type/MC only applies to cloze — dictation is always
+                    type-the-whole-sentence. */}
+                  {practiceFormat === 'cloze' && (
+                    <div className="">
+                      <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                        Mode
+                      </label>
+                      <div className="flex gap-1.5">
+                        <Button
+                          onClick={() => handleSetPracticeMode('type')}
+                          variant={practiceMode === 'type' ? 'default' : 'secondary'}
                         >
-                          {CLOZE_DRILLS.map((drill) => (
-                            <DropdownMenuRadioItem
-                              key={drill}
-                              value={drill}
-                              closeOnClick
-                              data-testid={`cloze-drill-${drill}`}
-                              className="flex-col items-start gap-0"
-                            >
-                              <span className="font-medium">
-                                {CLOZE_DRILL_OPTIONS[drill].label}
-                              </span>
-                              <span className="text-xs text-muted-foreground">
-                                {CLOZE_DRILL_OPTIONS[drill].description}
-                              </span>
-                            </DropdownMenuRadioItem>
-                          ))}
-                        </DropdownMenuRadioGroup>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                )}
-              </div>
+                          Type
+                        </Button>
+                        <Button
+                          onClick={() => handleSetPracticeMode('mc')}
+                          variant={practiceMode === 'mc' ? 'default' : 'secondary'}
+                        >
+                          MC
+                        </Button>
+                        {voiceOffered && (
+                          <Button
+                            onClick={() => handleSetPracticeMode('voice')}
+                            variant={practiceMode === 'voice' ? 'default' : 'secondary'}
+                            disabled={!voiceSupported}
+                            title={
+                              voiceSupported
+                                ? 'Say the missing word or the whole sentence'
+                                : 'Voice answers need a microphone and a secure page (HTTPS or localhost)'
+                            }
+                          >
+                            Voice
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {practiceFormat === 'cloze' && drillsAvailable && (
+                    <div>
+                      <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                        Blank
+                      </label>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={<Button variant="secondary" />}
+                          data-testid="cloze-drill"
+                          aria-label={`Blank: ${CLOZE_DRILL_OPTIONS[clozeDrill].label}`}
+                        >
+                          {CLOZE_DRILL_OPTIONS[clozeDrill].label}
+                          <ChevronDown />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-64">
+                          <DropdownMenuRadioGroup
+                            value={clozeDrill}
+                            onValueChange={(value) => handleSetClozeDrill(value as ClozeDrill)}
+                          >
+                            {CLOZE_DRILLS.map((drill) => (
+                              <DropdownMenuRadioItem
+                                key={drill}
+                                value={drill}
+                                closeOnClick
+                                data-testid={`cloze-drill-${drill}`}
+                                className="flex-col items-start gap-0"
+                              >
+                                <span className="font-medium">
+                                  {CLOZE_DRILL_OPTIONS[drill].label}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {CLOZE_DRILL_OPTIONS[drill].description}
+                                </span>
+                              </DropdownMenuRadioItem>
+                            ))}
+                          </DropdownMenuRadioGroup>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  )}
+                </div>
 
-              {/* Start button */}
-              <Button
-                onClick={() => startRoundWith(selectedCollection, 'new', roundSize)}
-                disabled={!seeded}
-                className="w-full"
-              >
-                {seeded ? 'Start' : 'Loading...'}
-              </Button>
-            </div>
+                {/* Start button */}
+                <Button
+                  onClick={() => startRoundWith(selectedCollection, 'new', roundSize)}
+                  disabled={!seeded}
+                  className="w-full"
+                >
+                  {seeded ? 'Start' : 'Loading...'}
+                </Button>
+              </div>
+            )}
           </div>
         )}
 

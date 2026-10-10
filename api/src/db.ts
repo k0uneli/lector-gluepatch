@@ -472,6 +472,26 @@ function getDb(): Database {
       text TEXT NOT NULL,
       PRIMARY KEY (userId, lessonId, idx)
     );
+
+    -- Daily recall challenge: English sentences to translate, built from the
+    -- learner's vocab. words is JSON [{id, text}]; vocabChanges is JSON
+    -- [{id, from, to}], the level moves applied for the current verdict.
+    CREATE TABLE IF NOT EXISTS recall_items (
+      userId TEXT NOT NULL DEFAULT 'local',
+      language TEXT NOT NULL,
+      day TEXT NOT NULL,
+      idx INTEGER NOT NULL,
+      english TEXT NOT NULL,
+      reference TEXT NOT NULL,
+      words TEXT NOT NULL,
+      answer TEXT,
+      correct INTEGER,
+      aiCorrect INTEGER,
+      feedback TEXT,
+      vocabChanges TEXT,
+      answeredAt TEXT,
+      PRIMARY KEY (userId, language, day, idx)
+    );
   `);
 
   // Migrations for existing databases

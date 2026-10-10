@@ -1,6 +1,6 @@
 # Practice domain
 
-This domain runs cloze, voice cloze, and dictation with spaced repetition (SRS). Cards live in `clozeSentences`. Mastery 100 also writes the Vocabulary domain.
+This domain runs cloze, voice cloze, and dictation with spaced repetition (SRS), plus the daily recall challenge. Cards live in `clozeSentences`. Mastery 100 also writes the Vocabulary domain.
 
 Intervals in days come from `calculateNextReview`:
 
@@ -117,6 +117,30 @@ Same SRS persist. The user types the full sentence after TTS.
 Pass threshold is 0.75. Surrender is always a miss. A pack with `pronunciation.audio: 'none'` hides Dictation.
 
 Tests: `e2e/dictation.spec.ts`.
+
+## Recall
+
+**App domain:** Practice
+
+A daily challenge, outside the SRS. The user translates English sentences into the target language. The sentences use the user's own vocab.
+
+| Role | Path | Function |
+| --- | --- | --- |
+| Screen | `src/app/practice/components/Recall/index.tsx` | `RecallPractice` |
+| Client | `src/lib/recall.ts` | `startRecallToday`, `answerRecall`, `setRecallVerdict` |
+| API | `api/src/routes/recall.ts` | `GET/POST /today`, `POST /:day/:idx/answer`, `PUT /:day/:idx/verdict` |
+| Logic | `api/src/lib/recall.ts` | `buildRecallSentences`, `VocabMatcher`, `gradeRecallAnswer`, `vocabChangesFor` |
+| Dictionary | `api/src/lib/dictionary-db.ts` | `classifyWords` |
+
+- The first `POST /today` of the day asks the LLM for the day's count plus 5 spare sentences. The count is the Settings value, 10 by default. The prompt lists the vocab, a focus list of two learning words per known word, and the sentences of recent days to avoid.
+- `VocabMatcher` checks each reference translation. A word passes when it, or a lemma it inflects from, matches a vocab word or that word's lemma. A grammar word also passes: the dictionary tags it pron, prep, conj, particle, det, article, num or postp, or it is a form of "to be". Clean sentences come first, then sentences with one unknown word. Sentences with more unknown words, or with no vocab word, are dropped.
+- The reference stays hidden until the sentence is answered. "Show answer" sends `giveUp` and makes no LLM call.
+- A correct verdict raises each practised word one level, up to known. A wrong verdict lowers the words the grader names in `missed`, or all practised words when it names none. The floor is level1. `knownWords` follows `vocab`.
+- `vocabChanges` stores the moves. `PUT /verdict` reverts them, then applies the moves for the new verdict. A word another action has changed in between is left alone.
+- Each answer adds 1 to `dailyStats.clozePracticed`, so recall counts toward the streak.
+- Only today's set can be answered. `recall_items` is a tenant table. The takeout leaves it out, as operational state. A personal access token cannot reach the route, because it spends LLM credit.
+
+Tests: `api/src/lib/recall.test.ts`, `api/src/routes/recall.test.ts`, `src/lib/__tests__/recall.test.ts`, `e2e/recall.spec.ts`.
 
 ## Voice cloze
 

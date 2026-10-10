@@ -2941,6 +2941,19 @@ const internalOps: Record<string, OperationDoc> = {
     auth: 'none',
   },
 
+  'GET /api/recall/today': { summary: 'Get today’s recall challenge', tag: 'Practice' },
+  'POST /api/recall/today': { summary: 'Generate today’s recall challenge', tag: 'Practice' },
+  'POST /api/recall/{day}/{idx}/answer': {
+    summary: 'Grade a recall answer',
+    tag: 'Practice',
+    pathParams: { day: 'Challenge date, YYYY-MM-DD.', idx: 'Sentence index.' },
+  },
+  'PUT /api/recall/{day}/{idx}/verdict': {
+    summary: 'Override the grade of a recall answer',
+    tag: 'Practice',
+    pathParams: { day: 'Challenge date, YYYY-MM-DD.', idx: 'Sentence index.' },
+  },
+
   'POST /api/tokens': { summary: 'Create a personal access token', tag: 'Settings' },
   'GET /api/tokens': { summary: 'List personal access tokens', tag: 'Settings' },
   'POST /api/tokens/verify': { summary: 'Verify the current token', tag: 'Settings' },
