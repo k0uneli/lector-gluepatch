@@ -27,9 +27,15 @@ import {
   SkipForward,
 } from 'lucide-react';
 import type { AudioTranscriptSegment, Lesson, WordState } from '@/types';
-import { foldWord, getLanguageConfig, isValidLanguageCode } from '@/lib/languages';
+import { foldWord, getLanguageConfig, isValidLanguageCode, tokenize } from '@/lib/languages';
 import { useActiveLanguage } from '@/utils/hooks';
-import { splitWords } from '@/components/MarkdownReader/utils';
+import {
+  computePhraseHighlightSet,
+  readableRangeText,
+  snapToWordBoundaries,
+  splitWords,
+} from '@/components/MarkdownReader/utils';
+import { usePhraseTouchSelection } from '@/components/MarkdownReader/usePhraseTouchSelection';
 import WordCell from '@/components/WordCell';
 import AddLineToAnki, { type TranscriptLine } from '@/components/AddLineToAnki';
 import type { WordSource } from '@/components/MarkdownReader/types';
@@ -37,6 +43,8 @@ import { createAudioUnitPlayer, type UnitPlayer } from './drill-player';
 import { activeSegmentIndex, formatClock, nextPlaybackRate } from './utils';
 
 const SKIP_SECONDS = 5;
+const NO_PHRASE: string[] = [];
+const NO_PHRASE_SET = new Set<number>();
 
 export interface ListenAlongProps {
   lesson: Lesson;
@@ -113,6 +121,10 @@ export default function ListenAlong({
   // Word ring highlight follows the drawer: cleared whenever it's closed,
   // like the reader. Derived, not an effect — no cascading render.
   const effectiveActiveWord = wordPanelOpen ? activeWord : null;
+  const [highlightedPhrase, setHighlightedPhrase] = useState<string[]>([]);
+  const effectivePhrase = wordPanelOpen ? highlightedPhrase : NO_PHRASE;
+  // A mouse drag ends with a click on the row, which must not seek playback.
+  const suppressRowClickRef = useRef(false);
 
   // Keep the active sentence in view while playing — but never while the
   // learner is mid-lookup (#433): tapping a word pauses playback, and that
@@ -199,6 +211,7 @@ export default function ListenAlong({
       // the view freezes where the learner tapped instead of sailing on.
       const scroller = scrollContainerRef.current;
       if (scroller) scroller.scrollTo({ top: scroller.scrollTop, behavior: 'auto' });
+      setHighlightedPhrase(NO_PHRASE);
       setActiveWord({ segmentIdx: segment.idx, wordIndex });
       onWordClick(text, segment.text, {
         sourceUrl: '',
@@ -208,6 +221,57 @@ export default function ListenAlong({
     },
     [onWordClick, unitPlayer],
   );
+
+  const phraseWords = useCallback(
+    (text: string): string[] =>
+      tokenize(text, pack)
+        .filter((token) => token.isWord)
+        .map((token) => foldWord(token.text, pack)),
+    [pack],
+  );
+
+  const lookUpPhrase = useCallback(
+    (text: string, element: HTMLElement | null) => {
+      const words = phraseWords(text);
+      const row = element?.closest<HTMLElement>('[data-segment-idx]');
+      const segment = row ? segments[Number(row.dataset.segmentIdx)] : undefined;
+      if (words.length < 2 || !segment) return;
+      window.getSelection()?.removeAllRanges();
+      suppressRowClickRef.current = true;
+      unitPlayer()?.stop();
+      const scroller = scrollContainerRef.current;
+      if (scroller) scroller.scrollTo({ top: scroller.scrollTop, behavior: 'auto' });
+      setActiveWord(null);
+      setHighlightedPhrase(words);
+      onWordClick(text, segment.text, {
+        sourceUrl: '',
+        startMs: segment.startMs,
+        endMs: segment.endMs,
+      });
+    },
+    [onWordClick, phraseWords, segments, unitPlayer],
+  );
+
+  const handleMouseUp = useCallback(() => {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) return;
+    const raw = selection.toString().trim();
+    if (!raw || phraseWords(raw).length < 2) return;
+    const snapped = snapToWordBoundaries(selection, pack);
+    if (snapped) lookUpPhrase(snapped, selection.anchorNode?.parentElement ?? null);
+  }, [lookUpPhrase, phraseWords, pack]);
+
+  const handleTouchPhrase = useCallback(
+    (first: HTMLElement, last: HTMLElement) => {
+      const range = document.createRange();
+      range.setStartBefore(first);
+      range.setEndAfter(last);
+      lookUpPhrase(readableRangeText(range).trim(), first);
+    },
+    [lookUpPhrase],
+  );
+
+  usePhraseTouchSelection(scrollContainerRef, handleTouchPhrase);
 
   const handleSeek = (valueMs: number) => {
     const audio = audioRef.current;
@@ -249,9 +313,23 @@ export default function ListenAlong({
         <div
           className="mx-auto max-w-[38em] px-4 py-8 sm:px-8"
           style={{ fontFamily: 'var(--font-literata), Georgia, serif' }}
+          onMouseDown={() => {
+            suppressRowClickRef.current = false;
+          }}
+          onMouseUp={handleMouseUp}
         >
           {segments.map((segment, idx) => {
             const isActive = idx === activeIdx;
+            const parts = splitWords(segment.text, pack);
+            const phraseSet =
+              effectivePhrase.length > 0
+                ? computePhraseHighlightSet(
+                    parts.filter((p) => p.isWord).map((p) => foldWord(p.text, pack)),
+                    effectivePhrase,
+                    pack,
+                  )
+                : NO_PHRASE_SET;
+            let wordIndex = -1;
             return (
               <div key={segment.idx} className="group flex items-start gap-1">
                 <p
@@ -260,8 +338,13 @@ export default function ListenAlong({
                     else segmentRefs.current.delete(idx);
                   }}
                   data-testid="listen-segment"
+                  data-segment-idx={idx}
                   data-active-segment={isActive || undefined}
                   onClick={(event) => {
+                    if (suppressRowClickRef.current) {
+                      suppressRowClickRef.current = false;
+                      return;
+                    }
                     // Row tap (not on a word) jumps playback to this sentence.
                     if ((event.target as HTMLElement).closest('[data-testid="reader-word"]'))
                       return;
@@ -278,8 +361,10 @@ export default function ListenAlong({
                       : 'hover:bg-accent/50'
                   }`}
                 >
-                  {splitWords(segment.text, pack).map((part, partIndex) =>
-                    part.isWord ? (
+                  {parts.map((part, partIndex) => {
+                    if (!part.isWord) return <span key={partIndex}>{part.text}</span>;
+                    wordIndex += 1;
+                    return (
                       <WordCell
                         key={partIndex}
                         text={part.text}
@@ -288,12 +373,11 @@ export default function ListenAlong({
                           effectiveActiveWord?.segmentIdx === segment.idx &&
                           effectiveActiveWord.wordIndex === partIndex
                         }
+                        isPhraseHighlighted={phraseSet.has(wordIndex)}
                         onActivate={(text) => handleWordTap(segment, partIndex, text)}
                       />
-                    ) : (
-                      <span key={partIndex}>{part.text}</span>
-                    ),
-                  )}
+                    );
+                  })}
                 </p>
                 {onAddLine && (
                   <div className="my-1 pt-2">

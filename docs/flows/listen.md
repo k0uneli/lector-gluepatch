@@ -70,7 +70,7 @@ sequenceDiagram
 | API | `api/src/routes/lessons.ts` | `GET /:id/segments`, `GET /:id/audio` |
 | Worker | `api/src/lib/transcribe-worker.ts` | `applyTranscript` |
 
-Word tap pauses and opens the Translation drawer. Shadow mode repeats a unit.
+Word tap pauses and opens the Translation drawer. A drag across words, or a long-press drag on touch, looks up the phrase the same way, and does not seek. Shadow mode repeats a unit.
 
 On AnkiConnect, each line has a hover button that adds the line to Anki. See [Push to Anki](anki.md#push-to-anki).
 

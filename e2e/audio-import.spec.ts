@@ -236,6 +236,50 @@ test.describe('Audio import (#185)', () => {
     await expect(page.getByRole('heading', { name: 'potgooi' })).toBeVisible({ timeout: 10000 });
   });
 
+  test('dragging across words in listen-along looks up the phrase without seeking', async ({
+    page,
+  }) => {
+    const { lessonId } = await uploadAudio(page, 'E2E Oudio Frase');
+    await stubTranscribedLesson(page, lessonId);
+    const translated: Array<{ word: string; sentence: string; type: string }> = [];
+    await page.route('**/api/translate', async (route) => {
+      translated.push(JSON.parse(route.request().postData() || '{}'));
+      await route.fulfill({ json: { translation: 'welcome to the podcast' } });
+    });
+
+    await page.goto(`/read/${lessonId}`);
+    await page.getByTestId('listen-along-toggle').click();
+    const row = page.getByTestId('listen-segment').nth(1);
+    await expect(row).toBeVisible();
+    await expect(row).not.toHaveAttribute('data-active-segment', 'true');
+
+    const words = row.getByTestId('reader-word');
+    const from = (await words.nth(0).boundingBox())!;
+    const to = (await words.nth(2).boundingBox())!;
+    await page.mouse.move(from.x + 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x + to.width - 2, to.y + to.height / 2, { steps: 5 });
+    await page.mouse.up();
+
+    await expect(page.getByTestId('translation-drawer')).toHaveClass(/translate-x-0/, {
+      timeout: 5000,
+    });
+    await expect.poll(() => translated.length).toBe(1);
+    expect(translated[0]).toMatchObject({
+      word: 'Welkom by die',
+      sentence: 'Welkom by die potgooi.',
+      type: 'phrase',
+    });
+    await expect(row.locator('[data-phrase-highlighted]')).toHaveCount(3);
+    // The drag must not count as a row tap that jumps playback to this line.
+    await expect(row).not.toHaveAttribute('data-active-segment', 'true');
+
+    // A plain row tap afterwards still seeks.
+    await page.keyboard.press('Escape');
+    await row.click({ position: { x: 6, y: 6 } });
+    await expect(row).toHaveAttribute('data-active-segment', 'true');
+  });
+
   test('word tap keeps the scroll position while the drill is playing (#433)', async ({ page }) => {
     const { lessonId } = await uploadAudio(page, 'E2E Oudio Rol');
     await stubTranscribedLesson(page, lessonId, LONG_SEGMENTS);
