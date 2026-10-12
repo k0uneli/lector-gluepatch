@@ -339,8 +339,8 @@
   N("flow:listen-along", "flow", "Listen-along", {
     domain: "listen",
     md: "listen.md#listen-along",
-    summary: "Podcast playback after ASR. GET segments and Range audio. Not the YouTube player.",
-    steps: ["file:listen-along", "route:lessons-segments", "route:lessons-audio", "table:transcript_segments"],
+    summary: "Audio or video playback after ASR. GET segments and Range media. Not the YouTube player.",
+    steps: ["file:listen-along", "route:lessons-segments", "route:lessons-audio", "route:lessons-video", "table:transcript_segments"],
   });
   N("flow:youtube-captions", "flow", "YouTube captions", {
     domain: "listen",
@@ -693,7 +693,7 @@
   N("fn:addFormattedNote", "fn", "addFormattedNote", { path: "src/lib/anki.ts" });
   N("fn:addSentenceCard", "fn", "addSentenceCard", { path: "src/lib/anki.ts" });
   N("fn:addLineToAnki", "fn", "ReadPage.addLineToAnki", { path: "src/app/read/[bookId]/page.tsx" });
-  N("fn:addPracticeWordToAnki", "fn", "addPracticeWordToAnki", { path: "src/app/practice/add-word-to-anki.ts" });
+  N("fn:addWordCardToAnki", "fn", "addWordCardToAnki", { path: "src/lib/anki-word-card.ts" });
   N("file:add-line-to-anki", "file", "AddLineToAnki", { path: "src/components/AddLineToAnki/index.tsx", domain: "anki" });
   N("fn:renderNoteFields", "fn", "renderNoteFields", { path: "src/lib/anki-formats.ts" });
   N("fn:synthesizeSpeech", "fn", "synthesizeSpeech", { path: "src/lib/tts.ts" });
@@ -741,6 +741,7 @@
   N("route:lessons-progress", "route", "PUT /api/lessons/:id/progress", { path: "api/src/routes/lessons.ts" });
   N("route:lessons-segments", "route", "GET /api/lessons/:id/segments", { path: "api/src/routes/lessons.ts" });
   N("route:lessons-audio", "route", "GET /api/lessons/:id/audio", { path: "api/src/routes/lessons.ts" });
+  N("route:lessons-video", "route", "GET /api/lessons/:id/video", { path: "api/src/routes/lessons.ts" });
   N("route:lessons-clip", "route", "GET /api/lessons/:id/clip", { path: "api/src/routes/lessons.ts" });
   N("route:known-words-get", "route", "GET /api/known-words", { path: "api/src/routes/known-words.ts" });
   N("route:known-words-post", "route", "POST /api/known-words", { path: "api/src/routes/known-words.ts" });
@@ -1259,6 +1260,8 @@
   edge("flow:listen-along", "file:listen-along", "starts");
   edge("file:listen-along", "route:lessons-segments", "http");
   edge("file:listen-along", "route:lessons-audio", "http");
+  edge("file:listen-along", "route:lessons-video", "http");
+  edge("route:lessons-video", "file:route-lessons", "in");
   edge("route:lessons-segments", "table:transcript_segments", "reads");
   edge("file:read-page", "file:listen-along", "opens");
   edge("flow:youtube-captions", "file:youtube-player", "starts");
@@ -1273,10 +1276,12 @@
   edge("fn:addWordCard", "file:anki-client", "in");
   edge("flow:anki-push", "fn:addFormattedNote", "calls");
   edge("flow:anki-push", "fn:addLineToAnki", "calls");
-  edge("flow:anki-push", "fn:addPracticeWordToAnki", "calls");
-  edge("file:practice-page", "fn:addPracticeWordToAnki", "calls");
-  edge("fn:addPracticeWordToAnki", "fn:addFormattedNote", "calls");
-  edge("fn:addPracticeWordToAnki", "fn:queueForAnki", "calls");
+  edge("flow:anki-push", "fn:addWordCardToAnki", "calls");
+  edge("file:practice-page", "fn:addWordCardToAnki", "calls");
+  edge("file:read-page", "fn:addWordCardToAnki", "calls");
+  edge("fn:addWordCardToAnki", "fn:addFormattedNote", "calls");
+  edge("fn:addWordCardToAnki", "fn:addWordCard", "calls");
+  edge("fn:addWordCardToAnki", "fn:queueForAnki", "calls");
   edge("file:listen-along", "file:add-line-to-anki", "uses");
   edge("file:transcript-reader", "file:add-line-to-anki", "uses");
   edge("file:add-line-to-anki", "fn:addLineToAnki", "calls");

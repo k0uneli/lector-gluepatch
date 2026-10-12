@@ -1,8 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { addPracticeWordToAnki, type PracticeWordLookup } from '../add-word-to-anki';
-import { getLanguageConfig } from '@/lib/languages';
-import { clearQueryCache } from '@/lib/query-cache';
-import type { AnkiNoteFormats } from '@/lib/anki-formats';
+import {
+  addWordCardToAnki,
+  ankiDeckNames,
+  ensureVocabEntry,
+  newVocabEntry,
+  wordCardTexts,
+  type WordLookup,
+} from '../anki-word-card';
+import type { AnkiTransport } from '../anki-transport';
+import { getLanguageConfig } from '../languages';
+import { clearQueryCache } from '../query-cache';
+import type { AnkiNoteFormat, AnkiNoteFormats } from '../anki-formats';
 
 interface Call {
   url: string;
@@ -38,8 +46,9 @@ function stubServers(opts: { formats?: AnkiNoteFormats; existingVocab?: unknown[
   return calls;
 }
 
-const lookup = (overrides: Partial<PracticeWordLookup> = {}): PracticeWordLookup => ({
+const lookup = (overrides: Partial<WordLookup> = {}): WordLookup => ({
   word: 'слышу',
+  sentence: SENTENCE,
   translation: 'to hear — first-person singular … of слы́шать',
   aiContextTranslation: null,
   aiStructured: null,
@@ -71,7 +80,18 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('addPracticeWordToAnki', () => {
+/** What cloze practice does: ensure the entry, then send the card. */
+async function addPracticeWord(word: WordLookup, transport: AnkiTransport) {
+  const entry = await ensureVocabEntry({
+    word: word.word,
+    sentence: word.sentence,
+    translation: word.translation ?? '',
+    pack: ru,
+  });
+  return addWordCardToAnki({ lookup: word, vocabEntryId: entry.id, transport, pack: ru });
+}
+
+describe('addWordCardToAnki', () => {
   it('fills the word format with the full sentence and the lemma meaning', async () => {
     const calls = stubServers({
       formats: {
@@ -84,7 +104,7 @@ describe('addPracticeWordToAnki', () => {
       },
     });
 
-    await addPracticeWordToAnki(lookup(), SENTENCE, 'ankiconnect', ru);
+    await addPracticeWord(lookup(), 'ankiconnect');
 
     const { note } = ankiNote(calls);
     expect(note.modelName).toBe('vocabsieve-notes-with-url');
@@ -99,7 +119,7 @@ describe('addPracticeWordToAnki', () => {
   it('creates a level1 vocab entry and marks it pushed', async () => {
     const calls = stubServers();
 
-    await addPracticeWordToAnki(lookup(), SENTENCE, 'ankiconnect', ru);
+    await addPracticeWord(lookup(), 'ankiconnect');
 
     const created = calls.find((c) => c.url.includes('/api/vocab') && c.method === 'POST')!.body!;
     expect(created).toMatchObject({ text: 'слышу', state: 'level1', sentence: SENTENCE });
@@ -116,7 +136,7 @@ describe('addPracticeWordToAnki', () => {
       ],
     });
 
-    await addPracticeWordToAnki(lookup(), SENTENCE, 'ankiconnect', ru);
+    await addPracticeWord(lookup(), 'ankiconnect');
 
     expect(calls.some((c) => c.url.includes('/api/vocab') && c.method === 'POST')).toBe(false);
     expect(calls.find((c) => c.method === 'PUT')!.url).toContain('/api/vocab/v1');
@@ -129,11 +149,9 @@ describe('addPracticeWordToAnki', () => {
       },
     });
 
-    await addPracticeWordToAnki(
+    await addPracticeWord(
       lookup({ dictEntry: null, aiContextTranslation: 'I hear', translation: 'I hear' }),
-      SENTENCE,
       'ankiconnect',
-      ru,
     );
 
     expect(ankiNote(calls).note.fields.Definition).toBe('I hear');
@@ -142,16 +160,92 @@ describe('addPracticeWordToAnki', () => {
   it('queues the word for the add-on and never calls AnkiConnect', async () => {
     const calls = stubServers();
 
-    await addPracticeWordToAnki(lookup(), SENTENCE, 'addon', ru);
+    const result = await addPracticeWord(lookup(), 'addon');
+    expect(result).toEqual({ noteId: null, audioFailed: false });
 
     const queued = calls.find((c) => c.url.includes('/api/anki/queue'))!.body!;
     expect(queued.items).toEqual([
       expect.objectContaining({
         cardType: 'word',
         word: 'слышу',
+        translation: 'to hear — first-person singular … of слы́шать',
         meaning: 'to hear — first-person singular … of слы́шать',
       }),
     ]);
     expect(calls.some((c) => c.body?.action)).toBe(false);
+    expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+  });
+
+  it('puts the transcript link on the built-in card', async () => {
+    const calls = stubServers();
+
+    await addWordCardToAnki({
+      lookup: lookup(),
+      vocabEntryId: 'v1',
+      transport: 'ankiconnect',
+      pack: ru,
+      format: null,
+      source: { sourceUrl: 'https://www.youtube.com/watch?v=abc', startMs: 61000, endMs: 64000 },
+    });
+
+    expect(ankiNote(calls).note.fields.Back).toContain('watch?v=abc&amp;t=61s');
+  });
+
+  it('fetches the line clip only when the format has a Sentence audio field', async () => {
+    stubServers();
+    const getSentenceClip = vi.fn(async () => ({ data: 'SUQz', filename: 'clip.mp3' }));
+    const source = { sourceUrl: '', startMs: 1000, endMs: 3000 };
+    const withAudio: AnkiNoteFormat = {
+      modelName: 'M',
+      fields: { Word: 'word', SentenceAudio: 'sentenceAudio' },
+    };
+    const without: AnkiNoteFormat = { modelName: 'M', fields: { Word: 'word' } };
+
+    const base = {
+      lookup: lookup(),
+      vocabEntryId: 'v1',
+      transport: 'ankiconnect' as const,
+      pack: ru,
+    };
+    await addWordCardToAnki({ ...base, format: without, source, getSentenceClip });
+    expect(getSentenceClip).not.toHaveBeenCalled();
+    await addWordCardToAnki({ ...base, format: withAudio, source, getSentenceClip });
+    expect(getSentenceClip).toHaveBeenCalledWith(1000, 3000);
+  });
+});
+
+describe('helpers', () => {
+  it('wordCardTexts keeps the in-context translation apart from the first sense', () => {
+    expect(
+      wordCardTexts({
+        translation: 'to hear; to listen',
+        aiContextTranslation: 'I hear',
+        aiStructured: null,
+        dictEntry: { word: 'слышу', senses: [{ partOfSpeech: 'verb', gloss: 'to hear' }] },
+      }),
+    ).toEqual({ translation: 'I hear', meaning: 'to hear' });
+  });
+
+  it('newVocabEntry makes a multi-word selection a phrase and keeps the book', () => {
+    const entry = newVocabEntry({
+      word: 'Я слышу',
+      sentence: SENTENCE,
+      translation: 'I hear',
+      pack: ru,
+      bookId: 'lesson-1',
+    });
+    expect(entry).toMatchObject({
+      text: 'я слышу',
+      type: 'phrase',
+      state: 'level1',
+      bookId: 'lesson-1',
+    });
+    expect(newVocabEntry({ word: 'слышу', sentence: '', translation: '', pack: ru }).type).toBe(
+      'word',
+    );
+  });
+
+  it('ankiDeckNames reads the stored deck and falls back to the language name', () => {
+    expect(ankiDeckNames(ru)).toEqual({ word: 'Russian', sentence: `${ru.native}::Cloze` });
   });
 });

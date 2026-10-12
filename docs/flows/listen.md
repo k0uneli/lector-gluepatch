@@ -42,7 +42,7 @@ No audio blob table. Meter is `usage_counters` for Google characters.
 
 **App domain:** Listen
 
-Podcast import is the Library domain. Playback is this domain.
+Audio and video import is the Library domain. Playback is this domain. One view plays both. A video lesson shows its video above the transcript and opens in this view. An audio lesson opens as text, and the headphones button switches.
 
 ```mermaid
 sequenceDiagram
@@ -55,28 +55,31 @@ sequenceDiagram
   Note over Read: transcriptionStatus done
   Read->>DL: getLessonSegments
   DL->>API: GET /api/lessons/:id/segments
-  Read->>Player: listenMode on
-  Player->>API: GET /api/lessons/:id/audio
+  Read->>Player: listen-along on
+  Player->>API: GET /api/lessons/:id/audio or /video
   Note over API: Range, 206
-  Player->>Player: createAudioUnitPlayer
+  Player->>Player: createMediaUnitPlayer
 ```
 
 | Role | Path | Function |
 | --- | --- | --- |
-| Reader | `src/app/read/[bookId]/page.tsx` | listen mode toggle |
-| Player | `src/components/ListenAlong/index.tsx` | `ListenAlong` |
-| Units | `src/components/ListenAlong/drill-player.ts` | `createAudioUnitPlayer` |
-| Client | `src/lib/data-layer.ts` | `getLessonSegments`, `lessonAudioUrl` |
-| API | `api/src/routes/lessons.ts` | `GET /:id/segments`, `GET /:id/audio` |
+| Reader | `src/app/read/[bookId]/page.tsx` | `listenChoice`, the listen / watch toggle |
+| Player | `src/components/ListenAlong/index.tsx` | `ListenAlong` (`media` audio or video) |
+| Units | `src/components/ListenAlong/drill-player.ts` | `createMediaUnitPlayer` |
+| Phrases | `src/components/MarkdownReader/usePhraseSelection.ts` | `usePhraseSelection`, shared with the reader |
+| Client | `src/lib/data-layer.ts` | `getLessonSegments`, `lessonAudioUrl`, `lessonVideoUrl` |
+| API | `api/src/routes/lessons.ts` | `GET /:id/segments`, `GET /:id/audio`, `GET /:id/video` |
 | Worker | `api/src/lib/transcribe-worker.ts` | `applyTranscript` |
 
 Word tap pauses and opens the Translation drawer. A drag across words, or a long-press drag on touch, looks up the phrase the same way, and does not seek. Shadow mode repeats a unit.
 
 On AnkiConnect, each line has a hover button that adds the line to Anki. See [Push to Anki](anki.md#push-to-anki).
 
+The listen view has no reading annotations (ruby). Reading mode keeps them.
+
 Tables: `lessons`, `transcript_segments`. Files under `AUDIO_DIR`.
 
-Tests: `e2e/audio-import.spec.ts`, `e2e/transcript-line-anki.spec.ts`.
+Tests: `e2e/audio-import.spec.ts`, `e2e/video-listen-along.spec.ts`, `e2e/transcript-line-anki.spec.ts`.
 
 ## YouTube captions
 

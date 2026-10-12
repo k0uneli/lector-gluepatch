@@ -41,7 +41,7 @@ flowchart TD
 | Line clip | `api/src/routes/lessons.ts`, `api/src/lib/audio-clip.ts` | `GET /:id/clip`, `cutAudioClip` |
 | Queue | `src/lib/anki-queue.ts` | `queueForAnki` |
 | Reader | `src/app/read/[bookId]/page.tsx` | `addWordToAnki`, `addClozeToAnki`, `addLineToAnki` |
-| Practice | `src/app/practice/add-word-to-anki.ts` | `addPracticeWordToAnki` |
+| Word card | `src/lib/anki-word-card.ts` | `addWordCardToAnki`, `ensureVocabEntry`, `ankiDeckNames`, shared by the reader and practice |
 | Vocab | `src/app/vocab/page.tsx` | `handleExportToAnki` |
 | Settings | `src/app/settings/components/AnkiSettings/index.tsx` | `AnkiSettings` |
 | API | `api/src/routes/anki.ts` | `POST /queue`, `GET /pending`, `POST /ack` |

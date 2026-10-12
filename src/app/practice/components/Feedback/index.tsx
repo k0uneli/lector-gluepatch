@@ -9,10 +9,9 @@ import TargetText from '@/components/TargetText';
 import { addClozeCard, addFormattedNote } from '@/lib/anki';
 import { activeNoteFormat, loadAnkiNoteFormats } from '@/lib/anki-formats';
 import { queueForAnki } from '@/lib/anki-queue';
+import { ankiDeckNames, ensureVocabEntry } from '@/lib/anki-word-card';
 import { useAnkiTransport } from '@/lib/anki-transport';
-import { clozeTokenSeparator, foldWord, resolveClozeTokens } from '@/lib/languages';
-import { getVocabByText, saveVocab } from '@/lib/data-layer';
-import { ANKI_CLOZE_DECK_SETTING_KEY } from '../../constants';
+import { clozeTokenSeparator, resolveClozeTokens } from '@/lib/languages';
 import { CurrentSentence, IFeedbackData } from '../../types';
 import { canSpeak, speak } from '@/lib/tts';
 import { useActiveLanguage } from '@/utils/hooks';
@@ -46,8 +45,7 @@ export default function Feedback({
 
     setIsAddingToAnki(true);
     try {
-      const deckName =
-        localStorage.getItem(ANKI_CLOZE_DECK_SETTING_KEY) || `${activeLang.native}::Cloze`;
+      const deckName = ankiDeckNames(activeLang).sentence;
 
       const cleanWord = splitTrailingPunctuation(current.sentence.clozeWord)[0];
 
@@ -56,25 +54,12 @@ export default function Feedback({
       // a bank word that was never saved — it's being studied, so it belongs
       // in vocab) and queue the cloze with THIS sentence as an override.
       if (ankiTransport === 'addon') {
-        let entry = await getVocabByText(foldWord(cleanWord, activeLang));
-        if (!entry) {
-          const now = new Date();
-          entry = {
-            id: crypto.randomUUID(),
-            text: foldWord(cleanWord, activeLang),
-            type: 'word',
-            sentence: current.sentence.sentence,
-            translation: current.sentence.translation,
-            state: 'level1',
-            stateUpdatedAt: now,
-            reviewCount: 0,
-            createdAt: now,
-            pushedToAnki: false,
-          };
-          if ((await saveVocab(entry)) === null) {
-            throw new Error('Could not save the word to vocabulary');
-          }
-        }
+        const entry = await ensureVocabEntry({
+          word: cleanWord,
+          sentence: current.sentence.sentence,
+          translation: current.sentence.translation,
+          pack: activeLang,
+        });
         const result = await queueForAnki([
           {
             id: entry.id,

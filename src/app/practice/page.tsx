@@ -92,7 +92,7 @@ import VoiceAnswer from './components/VoiceAnswer';
 import { isVoiceInputSupported } from '@/lib/stt';
 import { lectorMode } from '@/lib/api-base';
 import { useAnkiTransport } from '@/lib/anki-transport';
-import { addPracticeWordToAnki, type PracticeWordLookup } from './add-word-to-anki';
+import { addWordCardToAnki, ensureVocabEntry, type WordLookup } from '@/lib/anki-word-card';
 import RecallPractice from './components/Recall';
 import {
   completeOnboarding,
@@ -194,7 +194,7 @@ export default function PracticePage() {
 
   // Word definition tooltip state
   const [wordTooltip, setWordTooltip] = useState<
-    | (PracticeWordLookup & {
+    | (Omit<WordLookup, 'sentence'> & {
         partOfSpeech: string | null;
         isLoading: boolean;
         isContextLoading: boolean;
@@ -397,12 +397,20 @@ export default function PracticePage() {
 
   const addTooltipWordToAnki = useCallback(async () => {
     if (!wordTooltip || !current || ankiTransport === 'unknown') return;
-    const { audioFailed } = await addPracticeWordToAnki(
-      wordTooltip,
-      current.sentence.sentence,
-      ankiTransport,
-      getActivePack(),
-    );
+    const pack = getActivePack();
+    const sentence = current.sentence.sentence;
+    const entry = await ensureVocabEntry({
+      word: wordTooltip.word,
+      sentence,
+      translation: wordTooltip.translation ?? '',
+      pack,
+    });
+    const { audioFailed } = await addWordCardToAnki({
+      lookup: { ...wordTooltip, sentence },
+      vocabEntryId: entry.id,
+      transport: ankiTransport,
+      pack,
+    });
     if (audioFailed) toast.warning('Added to Anki without audio — no server voice.');
   }, [wordTooltip, current, ankiTransport]);
 

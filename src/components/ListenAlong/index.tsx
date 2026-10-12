@@ -1,7 +1,7 @@
 'use client';
 
-// Listen-along player for audio-backed lessons (#185): the lesson's audio +
-// its timestamped transcript segments, with the reader's word-state coloring
+// Listen-along player for audio- and video-backed lessons (#185): the lesson's
+// media + its timestamped transcript segments, with the reader's word-state coloring
 // (shared <WordCell>). Two sub-modes over one transport:
 //
 // - Continuous (default): flowing playback with scrub/seek; the spoken
@@ -14,7 +14,7 @@
 // Tapping any word auto-pauses and opens the translation drawer via the same
 // onWordClick contract MarkdownReader uses, so vocab actions work identically.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react';
 import {
   ArrowLeft,
   BookOpenText,
@@ -27,19 +27,23 @@ import {
   SkipForward,
 } from 'lucide-react';
 import type { AudioTranscriptSegment, Lesson, WordState } from '@/types';
-import { foldWord, getLanguageConfig, isValidLanguageCode, tokenize } from '@/lib/languages';
+import {
+  foldWord,
+  getLanguageConfig,
+  isValidLanguageCode,
+  makeWordSegmentation,
+} from '@/lib/languages';
 import { useActiveLanguage } from '@/utils/hooks';
 import {
   computePhraseHighlightSet,
-  readableRangeText,
-  snapToWordBoundaries,
+  parseSegmentWords,
   splitWords,
 } from '@/components/MarkdownReader/utils';
-import { usePhraseTouchSelection } from '@/components/MarkdownReader/usePhraseTouchSelection';
+import { phraseWords, usePhraseSelection } from '@/components/MarkdownReader/usePhraseSelection';
 import WordCell from '@/components/WordCell';
 import AddLineToAnki, { type TranscriptLine } from '@/components/AddLineToAnki';
 import type { WordSource } from '@/components/MarkdownReader/types';
-import { createAudioUnitPlayer, type UnitPlayer } from './drill-player';
+import { createMediaUnitPlayer, type UnitPlayer } from './drill-player';
 import { activeSegmentIndex, formatClock, nextPlaybackRate } from './utils';
 
 const SKIP_SECONDS = 5;
@@ -49,7 +53,8 @@ const NO_PHRASE_SET = new Set<number>();
 export interface ListenAlongProps {
   lesson: Lesson;
   segments: AudioTranscriptSegment[];
-  audioUrl: string;
+  /** A video shows above the transcript; audio plays from a hidden element. */
+  media: { kind: 'audio' | 'video'; url: string };
   knownWordsMap: Map<string, WordState>;
   wordPanelOpen?: boolean;
   onWordClick: (word: string, sentence: string, source?: WordSource) => void;
@@ -69,7 +74,7 @@ interface ActiveListenWord {
 export default function ListenAlong({
   lesson,
   segments,
-  audioUrl,
+  media,
   knownWordsMap,
   wordPanelOpen = false,
   onWordClick,
@@ -83,7 +88,13 @@ export default function ListenAlong({
       ? getLanguageConfig(lesson.language)
       : activeLang;
 
-  const audioRef = useRef<HTMLAudioElement>(null);
+  // Same segmentation the reader uses, so word boundaries match it.
+  const segmentation = useMemo(
+    () => makeWordSegmentation(parseSegmentWords(lesson.segmentWords)),
+    [lesson.segmentWords],
+  );
+
+  const mediaRef = useRef<HTMLMediaElement | null>(null);
   const unitPlayerRef = useRef<UnitPlayer | null>(null);
   const segmentRefs = useRef<Map<number, HTMLElement>>(new Map());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -103,8 +114,8 @@ export default function ListenAlong({
   const activeIdx = mode === 'shadow' ? shadowIdx : playheadIdx;
 
   const unitPlayer = useCallback((): UnitPlayer | null => {
-    if (!audioRef.current) return null;
-    if (!unitPlayerRef.current) unitPlayerRef.current = createAudioUnitPlayer(audioRef.current);
+    if (!mediaRef.current) return null;
+    if (!unitPlayerRef.current) unitPlayerRef.current = createMediaUnitPlayer(mediaRef.current);
     return unitPlayerRef.current;
   }, []);
 
@@ -112,7 +123,7 @@ export default function ListenAlong({
 
   // Slowing down must time-stretch, not drop pitch.
   useEffect(() => {
-    const audio = audioRef.current;
+    const audio = mediaRef.current;
     if (!audio) return;
     audio.preservesPitch = true;
     audio.playbackRate = rate;
@@ -151,7 +162,7 @@ export default function ListenAlong({
   );
 
   const handlePlayPause = useCallback(() => {
-    const audio = audioRef.current;
+    const audio = mediaRef.current;
     if (!audio) return;
     if (isPlaying) {
       // Pausing manually also cancels a shadow unit's boundary poll.
@@ -173,7 +184,7 @@ export default function ListenAlong({
         playSegment(next);
         return;
       }
-      const audio = audioRef.current;
+      const audio = mediaRef.current;
       if (!audio) return;
       const target = Math.min(segments.length - 1, Math.max(0, playheadIdx + direction));
       const segment = segments[target];
@@ -183,7 +194,7 @@ export default function ListenAlong({
   );
 
   const skipSeconds = useCallback((delta: number) => {
-    const audio = audioRef.current;
+    const audio = mediaRef.current;
     if (!audio) return;
     audio.currentTime = Math.max(0, audio.currentTime + delta);
   }, []);
@@ -222,17 +233,9 @@ export default function ListenAlong({
     [onWordClick, unitPlayer],
   );
 
-  const phraseWords = useCallback(
-    (text: string): string[] =>
-      tokenize(text, pack)
-        .filter((token) => token.isWord)
-        .map((token) => foldWord(token.text, pack)),
-    [pack],
-  );
-
   const lookUpPhrase = useCallback(
     (text: string, element: HTMLElement | null) => {
-      const words = phraseWords(text);
+      const words = phraseWords(text, pack, segmentation);
       const row = element?.closest<HTMLElement>('[data-segment-idx]');
       const segment = row ? segments[Number(row.dataset.segmentIdx)] : undefined;
       if (words.length < 2 || !segment) return;
@@ -249,35 +252,23 @@ export default function ListenAlong({
         endMs: segment.endMs,
       });
     },
-    [onWordClick, phraseWords, segments, unitPlayer],
+    [onWordClick, pack, segmentation, segments, unitPlayer],
   );
 
-  const handleMouseUp = useCallback(() => {
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed) return;
-    const raw = selection.toString().trim();
-    if (!raw || phraseWords(raw).length < 2) return;
-    const snapped = snapToWordBoundaries(selection, pack);
-    if (snapped) lookUpPhrase(snapped, selection.anchorNode?.parentElement ?? null);
-  }, [lookUpPhrase, phraseWords, pack]);
-
-  const handleTouchPhrase = useCallback(
-    (first: HTMLElement, last: HTMLElement) => {
-      const range = document.createRange();
-      range.setStartBefore(first);
-      range.setEndAfter(last);
-      lookUpPhrase(readableRangeText(range).trim(), first);
-    },
-    [lookUpPhrase],
-  );
-
-  usePhraseTouchSelection(scrollContainerRef, handleTouchPhrase);
+  const handleMouseUp = usePhraseSelection(scrollContainerRef, pack, segmentation, lookUpPhrase);
 
   const handleSeek = (valueMs: number) => {
-    const audio = audioRef.current;
+    const audio = mediaRef.current;
     if (!audio) return;
     audio.currentTime = valueMs / 1000;
     setCurrentMs(valueMs);
+  };
+
+  const mediaEvents = {
+    onPlay: () => setIsPlaying(true),
+    onPause: () => setIsPlaying(false),
+    onTimeUpdate: (event: SyntheticEvent<HTMLMediaElement>) =>
+      setCurrentMs(Math.round(event.currentTarget.currentTime * 1000)),
   };
 
   const transportButton =
@@ -308,6 +299,23 @@ export default function ListenAlong({
         </button>
       </header>
 
+      {media.kind === 'video' && (
+        <div className="mx-auto w-full max-w-[46em] px-4 pt-3">
+          <video
+            ref={(el) => {
+              mediaRef.current = el;
+            }}
+            src={media.url}
+            preload="metadata"
+            playsInline
+            controls
+            {...mediaEvents}
+            data-testid="listen-video"
+            className="aspect-video max-h-[40vh] w-full rounded-xl border border-border bg-black"
+          />
+        </div>
+      )}
+
       {/* Segments */}
       <div ref={scrollContainerRef} className="flex-1 overflow-auto">
         <div
@@ -320,7 +328,7 @@ export default function ListenAlong({
         >
           {segments.map((segment, idx) => {
             const isActive = idx === activeIdx;
-            const parts = splitWords(segment.text, pack);
+            const parts = splitWords(segment.text, pack, segmentation);
             const phraseSet =
               effectivePhrase.length > 0
                 ? computePhraseHighlightSet(
@@ -514,15 +522,17 @@ export default function ListenAlong({
         </div>
       </div>
 
-      <audio
-        ref={audioRef}
-        src={audioUrl}
-        preload="metadata"
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-        onTimeUpdate={(event) => setCurrentMs(Math.round(event.currentTarget.currentTime * 1000))}
-        data-testid="listen-audio"
-      />
+      {media.kind === 'audio' && (
+        <audio
+          ref={(el) => {
+            mediaRef.current = el;
+          }}
+          src={media.url}
+          preload="metadata"
+          {...mediaEvents}
+          data-testid="listen-audio"
+        />
+      )}
     </div>
   );
 }

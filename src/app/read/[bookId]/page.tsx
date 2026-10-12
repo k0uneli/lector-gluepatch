@@ -34,7 +34,6 @@ import {
 } from '@/lib/data-layer';
 import { phraseSelectionLimitPayload, showPlanLimitToast } from '@/lib/plan-limits';
 import {
-  addWordCard,
   addClozeCard,
   addFormattedNote,
   addSentenceCard,
@@ -45,14 +44,13 @@ import {
 import type { TranscriptLine } from '@/components/AddLineToAnki';
 import {
   activeNoteFormat,
-  fieldsWithSource,
   formatPhraseDetails,
   isClozeFormat,
   loadAnkiNoteFormats,
-  pickWordDefinitions,
   type AnkiNoteFormats,
 } from '@/lib/anki-formats';
 import { queueForAnki } from '@/lib/anki-queue';
+import { addWordCardToAnki, ankiDeckNames, newVocabEntry } from '@/lib/anki-word-card';
 import { useAnkiTransport } from '@/lib/anki-transport';
 import { translateWord, translatePhrase, streamWordGloss, enrichWord } from '@/lib/claude';
 import {
@@ -65,7 +63,7 @@ import { speak } from '@/lib/tts';
 import { isComposing } from '@/lib/keyboard';
 import { foldWord, getLanguageConfig, isValidLanguageCode } from '@/lib/languages';
 import { toast } from 'sonner';
-import { Headphones, LoaderCircle } from 'lucide-react';
+import { Film, Headphones, LoaderCircle } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { WordPanelState } from '../types';
 import { useActiveLanguage } from '@/utils/hooks';
@@ -111,7 +109,8 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   const [error, setError] = useState<string | null>(null);
   // Listen-along (#185): the audio lesson's transcript segments + mode toggle.
   const [segments, setSegments] = useState<AudioTranscriptSegment[]>([]);
-  const [listenMode, setListenMode] = useState(false);
+  // Null until the learner picks a view: video lessons open in listen-along.
+  const [listenChoice, setListenChoice] = useState<boolean | null>(null);
   const [readerWordStates, setReaderWordStates] = useState<Map<string, WordState>>(new Map());
   const readerWordStatesRef = useRef(readerWordStates);
   const readerWordStateLoadRef = useRef<{
@@ -904,12 +903,10 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     }
   }, [router, lesson]);
 
-  // Read Anki deck names from localStorage — same keys the Settings page writes.
   const getAnkiDecks = useCallback(() => {
-    const basic = localStorage.getItem('lector-anki-deck') || activeLang.native;
-    const cloze = localStorage.getItem('lector-anki-cloze-deck') || `${activeLang.native}::Cloze`;
-    return { basic, cloze };
-  }, [activeLang.native]);
+    const { word, sentence } = ankiDeckNames(activeLang);
+    return { basic: word, cloze: sentence };
+  }, [activeLang]);
 
   // Ensure a vocab entry exists for the current word and return it.
   // Creates a level1 entry if none exists, so the word appears in the vocab list.
@@ -917,20 +914,13 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
     const existing = await resolveExistingEntry();
     if (existing) return existing;
 
-    const isPhrase = wordPanel.word.includes(' ');
-    const entry: VocabEntry = {
-      id: uuidv4(),
-      text: foldWord(wordPanel.word, activeLang),
-      type: isPhrase ? 'phrase' : 'word',
+    const entry = newVocabEntry({
+      word: wordPanel.word,
       sentence: wordPanel.sentence,
       translation: wordPanel.translation || '',
-      state: 'level1',
-      stateUpdatedAt: new Date(),
-      reviewCount: 0,
+      pack: activeLang,
       bookId: lessonId,
-      createdAt: new Date(),
-      pushedToAnki: false,
-    };
+    });
     const rollbackReaderState = applyReaderWordState(wordPanel.word, entry.state);
     if (!(await saveVocab(entry))) {
       rollbackReaderState();
@@ -965,77 +955,25 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   );
 
   const addWordToAnki = useCallback(async () => {
-    const { basic: deckName } = getAnkiDecks();
-    const wordMeaning =
-      (wordPanel.dictEntry?.senses.length ? entryMeaning(wordPanel.dictEntry, 1) : null) ??
-      wordPanel.aiStructured?.senses[0]?.gloss ??
-      wordPanel.translation ??
-      '';
-    const translation = wordPanel.aiContextTranslation ?? wordPanel.translation ?? '';
-    // Transcript provenance (#334) for the current word, if it came from a video.
-    const source = currentWordSourceRef.current;
-
     const entry = await ensureVocabEntry();
-
-    // Addon transport (#241): queue server-side instead of browser→
-    // AnkiConnect; the Lector addon creates the note and its ack flips
-    // pushedToAnki in the DB. The panel state flips optimistically so the
-    // button reads "added" like the direct path.
-    if (ankiTransport === 'addon') {
-      // word override: the entry stores the folded key ("häuser"), but the
-      // card must show the displayed casing ("Häuser") like the AnkiConnect
-      // path always has.
-      const result = await queueForAnki([
-        {
-          id: entry.id,
-          cardType: 'word',
-          word: wordPanel.word,
-          translation,
-          meaning: wordMeaning,
-          ...(source
-            ? { sourceUrl: source.sourceUrl, clipStartMs: source.startMs, clipEndMs: source.endMs }
-            : {}),
-        },
-      ]);
-      if (result.failed.length > 0) throw new Error(result.failed[0].error);
-      setWordPanel((prev) => ({
-        ...prev,
-        existingEntry: prev.existingEntry
-          ? { ...prev.existingEntry, pushedToAnki: true }
-          : { ...entry, pushedToAnki: true },
-      }));
-      return;
-    }
-
-    let noteId: number;
-    if (wordNoteFormat) {
-      const sentenceClip =
-        source && fieldsWithSource(wordNoteFormat, 'sentenceAudio').length > 0
-          ? await getLineClip(source.startMs, source.endMs)
-          : undefined;
-      const result = await addFormattedNote(
-        deckName,
-        wordNoteFormat,
-        { word: wordPanel.word, sentence: wordPanel.sentence, ...pickWordDefinitions(wordPanel) },
-        { audioText: wordPanel.word, sentenceClip, language: lessonPack.code, pack: lessonPack },
-      );
-      noteId = result.noteId;
-      if (result.audioFailed) toast.warning('Added to Anki without audio — no server voice.');
-    } else {
-      noteId = await addWordCard(
-        deckName,
-        wordPanel.word,
-        translation,
-        wordMeaning,
-        source ? buildSourceLinkHtml(source) : undefined,
-      );
-    }
-    await markVocabPushedToAnki(entry.id, noteId);
+    // The add-on transport returns no note id; its ack marks the entry pushed.
+    // The drawer reads "added" either way.
+    const { noteId, audioFailed } = await addWordCardToAnki({
+      lookup: wordPanel,
+      vocabEntryId: entry.id,
+      transport: ankiTransport === 'addon' ? 'addon' : 'ankiconnect',
+      pack: lessonPack,
+      deckName: getAnkiDecks().basic,
+      format: wordNoteFormat,
+      source: currentWordSourceRef.current,
+      getSentenceClip: getLineClip,
+    });
+    if (audioFailed) toast.warning('Added to Anki without audio — no server voice.');
+    const pushed =
+      noteId === null ? { pushedToAnki: true } : { pushedToAnki: true, ankiNoteId: noteId };
     setWordPanel((prev) => ({
       ...prev,
-      existingEntry: prev.existingEntry
-        ? { ...prev.existingEntry, pushedToAnki: true, ankiNoteId: noteId }
-        : { ...entry, pushedToAnki: true, ankiNoteId: noteId },
+      existingEntry: { ...(prev.existingEntry ?? entry), ...pushed },
     }));
   }, [
     wordPanel,
@@ -1407,16 +1345,20 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   return (
     <div className="flex h-dvh flex-col overflow-x-hidden bg-card 2xl:flex-row print:block print:h-auto print:overflow-visible">
       <div className="relative min-h-0 flex-1 overflow-hidden print:block print:h-auto print:overflow-visible">
-        {listenMode && segments.length > 0 && !isVideoLesson(lesson) ? (
+        {(listenChoice ?? isVideoLesson(lesson)) && segments.length > 0 ? (
           <ListenAlong
             lesson={lesson}
             segments={segments}
-            audioUrl={lessonAudioUrl(lesson.id)}
+            media={
+              isVideoLesson(lesson)
+                ? { kind: 'video', url: lessonVideoUrl(lesson.id) }
+                : { kind: 'audio', url: lessonAudioUrl(lesson.id) }
+            }
             onAddLine={ankiTransport === 'ankiconnect' ? addLineToAnki : undefined}
             knownWordsMap={readerWordStates}
             wordPanelOpen={wordPanel.isOpen}
             onWordClick={handleWordClick}
-            onExit={() => setListenMode(false)}
+            onExit={() => setListenChoice(false)}
           />
         ) : (
           <MarkdownReader
@@ -1429,22 +1371,21 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
             knownWordsMap={readerWordStates}
             prevLesson={prevLesson}
             nextLesson={nextLesson}
-            videoInfo={
-              isVideoLesson(lesson) && segments.length > 0
-                ? { url: lessonVideoUrl(lesson.id), segments }
-                : null
-            }
             onAddLine={ankiTransport === 'ankiconnect' ? addLineToAnki : undefined}
             headerAction={
-              segments.length > 0 && !isVideoLesson(lesson) ? (
+              segments.length > 0 ? (
                 <button
-                  onClick={() => setListenMode(true)}
-                  title="Listen along"
-                  aria-label="Listen along"
+                  onClick={() => setListenChoice(true)}
+                  title={isVideoLesson(lesson) ? 'Watch along' : 'Listen along'}
+                  aria-label={isVideoLesson(lesson) ? 'Watch along' : 'Listen along'}
                   data-testid="listen-along-toggle"
                   className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent"
                 >
-                  <Headphones className="h-5 w-5" />
+                  {isVideoLesson(lesson) ? (
+                    <Film className="h-5 w-5" />
+                  ) : (
+                    <Headphones className="h-5 w-5" />
+                  )}
                 </button>
               ) : undefined
             }

@@ -5,17 +5,14 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, ChevronLeft, ChevronRight, Languages, SquarePen } from 'lucide-react';
 import { getLessonReadings, updateLessonProgress } from '@/lib/data-layer';
 import { createTrailingThrottle } from './throttle';
-import { snapToWordBoundaries } from './utils';
 import {
-  foldWord,
   getLanguageConfig,
   isValidLanguageCode,
   makeWordSegmentation,
   splitSentences,
-  tokenize,
 } from '@/lib/languages';
-import { parseSegmentWords, readableRangeText, readableText } from './utils';
-import { usePhraseTouchSelection } from './usePhraseTouchSelection';
+import { parseSegmentWords, readableText } from './utils';
+import { phraseWords, usePhraseSelection } from './usePhraseSelection';
 import { useActiveLanguage, useProseStyleSettings } from '@/utils/hooks';
 import { resolveProseStyle } from '@/lib/prose-style';
 import { MarkdownReaderProps } from './types';
@@ -25,10 +22,7 @@ import { ANNOTATION_MODES, ANNOTATION_MODE_LABELS, type AnnotationMode } from '.
 import { SETTINGS_KEYS } from '@/app/settings/constants';
 import TranscriptReader from './TranscriptReader';
 import YouTubePlayer, { type SeekTarget } from '@/components/YouTubePlayer';
-import VideoPlayer, { type VideoPlayerHandle } from '@/components/VideoPlayer';
-import { Pause, Play, SkipBack, SkipForward } from 'lucide-react';
 import type { TranscriptSegment, YouTubeSourceMeta } from '@/types';
-import { activeSegmentIndex as findActiveSegment } from '@/components/ListenAlong/utils';
 
 export default function MarkdownReader({
   lesson,
@@ -41,7 +35,6 @@ export default function MarkdownReader({
   prevLesson,
   nextLesson,
   headerAction,
-  videoInfo,
   onAddLine,
 }: MarkdownReaderProps) {
   const router = useRouter();
@@ -111,79 +104,9 @@ export default function MarkdownReader({
     setActiveSegmentIndex(segmentIndex);
   }, []);
 
-  // ── Video player state ──
-  const videoPlayerRef = useRef<VideoPlayerHandle>(null);
-  type VideoMode = 'continuous' | 'shadow';
-  const [videoMode, setVideoMode] = useState<VideoMode>('continuous');
-  const [videoPlaying, setVideoPlaying] = useState(false);
-  const [shadowIdx, setShadowIdx] = useState(0);
-  const videoActiveIdx = videoMode === 'shadow' ? shadowIdx : (activeSegmentIndex ?? -1);
-
-  // Video player time updates: find the active segment from the current playback position.
-  // In shadow mode, pause at the end of the current segment.
-  const handleVideoTimeUpdate = useCallback(
-    (currentMs: number) => {
-      if (!videoInfo?.segments.length) return;
-      const idx = findActiveSegment(videoInfo.segments, currentMs);
-      if (videoMode === 'continuous') {
-        setActiveSegmentIndex(idx >= 0 ? idx : null);
-      } else {
-        // Shadow: pause when we pass the end of the current segment.
-        const seg = videoInfo.segments[shadowIdx];
-        if (seg && currentMs >= seg.endMs) {
-          videoPlayerRef.current?.pause();
-        }
-      }
-    },
-    [videoInfo?.segments, videoMode, shadowIdx],
-  );
-
-  const shadowPlaySegment = useCallback(
-    (idx: number) => {
-      const seg = videoInfo?.segments[idx];
-      if (!seg || !videoPlayerRef.current) return;
-      videoPlayerRef.current.seekTo(seg.startMs / 1000);
-      videoPlayerRef.current.play();
-    },
-    [videoInfo?.segments],
-  );
-
-  const shadowStep = useCallback(
-    (direction: -1 | 1) => {
-      if (!videoInfo?.segments.length) return;
-      const next = Math.min(videoInfo.segments.length - 1, Math.max(0, shadowIdx + direction));
-      setShadowIdx(next);
-      shadowPlaySegment(next);
-    },
-    [videoInfo?.segments, shadowIdx, shadowPlaySegment],
-  );
-
-  const handleVideoPlayPause = useCallback(() => {
-    if (!videoPlayerRef.current) return;
-    if (videoPlayerRef.current.isPaused()) {
-      if (videoMode === 'shadow') {
-        shadowPlaySegment(shadowIdx);
-      } else {
-        videoPlayerRef.current.play();
-      }
-    } else {
-      videoPlayerRef.current.pause();
-    }
-  }, [videoMode, shadowIdx, shadowPlaySegment]);
-
-  // Convert AudioTranscriptSegments to TranscriptSegments for TranscriptReader.
-  const videoTranscriptSegments = useMemo(() => {
-    if (!videoInfo?.segments.length) return null;
-    return videoInfo.segments.map((s) => ({
-      start: s.startMs / 1000,
-      end: s.endMs / 1000,
-      text: s.text,
-    }));
-  }, [videoInfo?.segments]);
-
   // Editing rewrites the flattened text, which would desync the timestamped
   // segments — so transcript correction is disabled for MVP (#334 follow-up).
-  const canEdit = !transcript && !videoTranscriptSegments && !!onSaveText;
+  const canEdit = !transcript && !!onSaveText;
 
   const startEdit = useCallback(() => {
     setDraftContent(lesson.textContent);
@@ -334,20 +257,6 @@ export default function MarkdownReader({
     [pack],
   );
 
-  // The words of a selected phrase, folded, in document order.
-  //
-  // Splits with the pack's tokenizer rather than on whitespace. Chinese writes
-  // no spaces, so a whitespace split returned the whole phrase as one token,
-  // computePhraseHighlightSet compared that token against single words, and no
-  // phrase ever highlighted in an unspaced script (#213).
-  const phraseWords = useCallback(
-    (text: string): string[] =>
-      tokenize(text, pack, segmentation)
-        .filter((token) => token.isWord)
-        .map((token) => foldWord(token.text, pack)),
-    [pack, segmentation],
-  );
-
   const clearPhraseHighlight = useCallback(() => {
     setHighlightedPhrase([]);
   }, []);
@@ -370,7 +279,7 @@ export default function MarkdownReader({
   // looking for a space, so the check holds in an unspaced script (#213).
   const lookUpPhrase = useCallback(
     (text: string, wordElement: HTMLElement | null) => {
-      const words = phraseWords(text);
+      const words = phraseWords(text, pack, segmentation);
       if (words.length < 2) return;
 
       // Clear browser selection but apply our own visual highlight. The
@@ -381,40 +290,10 @@ export default function MarkdownReader({
 
       onWordClick(text, wordElement ? findSentence(wordElement) : '');
     },
-    [onWordClick, phraseWords, findSentence],
+    [onWordClick, pack, segmentation, findSentence],
   );
 
-  // Handle text selection for phrases
-  const handleMouseUp = useCallback(() => {
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed) return;
-
-    const rawText = selection.toString().trim();
-    if (!rawText || phraseWords(rawText).length < 2) return;
-
-    // Snap to word boundaries
-    // Same segmentation the render used, or a phrase drag snaps to boundaries
-    // the reader never drew (#289 4.2).
-    const snappedText = snapToWordBoundaries(selection, pack, segmentation);
-    if (!snappedText) return;
-
-    lookUpPhrase(snappedText, selection.anchorNode?.parentElement as HTMLElement);
-  }, [lookUpPhrase, phraseWords, pack, segmentation]);
-
-  // The touch gesture reports its endpoint spans, so the phrase text comes from
-  // the DOM between them. That keeps the spacing of the rendered text, which a
-  // join of the word list would not in an unspaced script.
-  const handleTouchPhrase = useCallback(
-    (first: HTMLElement, last: HTMLElement) => {
-      const range = document.createRange();
-      range.setStartBefore(first);
-      range.setEndAfter(last);
-      lookUpPhrase(readableRangeText(range).trim(), first);
-    },
-    [lookUpPhrase],
-  );
-
-  usePhraseTouchSelection(containerRef, handleTouchPhrase);
+  const handleMouseUp = usePhraseSelection(containerRef, pack, segmentation, lookUpPhrase);
 
   return (
     <div className="flex h-full flex-col bg-card print:block print:h-auto">
@@ -539,87 +418,6 @@ export default function MarkdownReader({
               highlightedPhrase={highlightedPhrase}
               activeWord={activeWord}
               activeSegmentIndex={activeSegmentIndex}
-              onWordClick={onWordClick}
-              onActivateWord={setActiveWord}
-              onClearPhrase={clearPhraseHighlight}
-              onSeek={handleSeek}
-              onAddLine={onAddLine}
-            />
-          </>
-        ) : videoTranscriptSegments ? (
-          <>
-            <div className="sticky top-0 z-10 mx-auto max-w-[46em] bg-card px-4 pt-4 pb-2 sm:px-8">
-              <VideoPlayer
-                ref={videoPlayerRef}
-                src={videoInfo!.url}
-                seekTarget={seekTarget}
-                onTimeUpdate={handleVideoTimeUpdate}
-                onPause={() => setVideoPlaying(false)}
-                onPlay={() => setVideoPlaying(true)}
-              />
-              {/* Mode toggle + shadow controls */}
-              <div className="mt-2 flex items-center justify-between">
-                <div className="flex items-center gap-1 rounded-lg bg-muted p-0.5">
-                  <button
-                    onClick={() => setVideoMode('continuous')}
-                    className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                      videoMode === 'continuous'
-                        ? 'bg-background text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    Continuous
-                  </button>
-                  <button
-                    onClick={() => setVideoMode('shadow')}
-                    className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                      videoMode === 'shadow'
-                        ? 'bg-background text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    Shadow
-                  </button>
-                </div>
-                {videoMode === 'shadow' && (
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => shadowStep(-1)}
-                      title="Previous sentence"
-                      className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    >
-                      <SkipBack className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={handleVideoPlayPause}
-                      title={videoPlaying ? 'Pause' : 'Play'}
-                      className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    >
-                      {videoPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                    </button>
-                    <button
-                      onClick={() => shadowStep(1)}
-                      title="Next sentence"
-                      className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    >
-                      <SkipForward className="h-4 w-4" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-            <TranscriptReader
-              segments={videoTranscriptSegments}
-              sourceUrl=""
-              pack={pack}
-              prose={prose}
-              segmentation={segmentation}
-              knownWordsMap={knownWordsMap}
-              readings={readings}
-              annotationMode={annotationMode}
-              highlightedPhrase={highlightedPhrase}
-              activeWord={activeWord}
-              activeSegmentIndex={videoActiveIdx >= 0 ? videoActiveIdx : null}
               onWordClick={onWordClick}
               onActivateWord={setActiveWord}
               onClearPhrase={clearPhraseHighlight}

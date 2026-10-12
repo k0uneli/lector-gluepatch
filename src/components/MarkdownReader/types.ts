@@ -13,11 +13,6 @@ export interface WordSource {
   endMs: number;
 }
 
-export interface VideoInfo {
-  url: string;
-  segments: import('@/types').AudioTranscriptSegment[];
-}
-
 export interface MarkdownReaderProps {
   lesson: Lesson;
   onWordClick: (word: string, sentence: string, source?: WordSource) => void;
@@ -32,8 +27,6 @@ export interface MarkdownReaderProps {
   nextLesson?: LessonSummary | null;
   /** Extra header button(s), e.g. the listen-along toggle on audio lessons (#185). */
   headerAction?: ReactNode;
-  /** When set, renders an embedded video player with synced transcript. */
-  videoInfo?: VideoInfo | null;
   /** When set, transcript lines get a hover button that sends the line to Anki. */
   onAddLine?: (line: TranscriptLine) => Promise<void>;
 }

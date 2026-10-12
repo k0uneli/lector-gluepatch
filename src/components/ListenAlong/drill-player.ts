@@ -14,18 +14,18 @@ export interface UnitPlayer {
   playUnit(startMs: number, endMs: number): void;
   /** Pause without losing the element's position. */
   stop(): void;
-  /** Release timers; the player must not touch the audio element afterwards. */
+  /** Release timers; the player must not touch the media element afterwards. */
   dispose(): void;
 }
 
 /**
- * UnitPlayer over an HTMLAudioElement's time range. The end boundary is a
+ * UnitPlayer over an audio or video element's time range. The end boundary is a
  * requestAnimationFrame poll, NOT a setTimeout: a timeout goes stale the
  * moment the user pauses, scrubs, or changes playbackRate mid-unit, while a
  * poll reads the element's real currentTime every frame (~16 ms granularity,
  * inaudible at sentence boundaries).
  */
-export function createAudioUnitPlayer(audio: HTMLAudioElement): UnitPlayer {
+export function createMediaUnitPlayer(media: HTMLMediaElement): UnitPlayer {
   let raf: number | null = null;
 
   const cancelPoll = () => {
@@ -36,18 +36,18 @@ export function createAudioUnitPlayer(audio: HTMLAudioElement): UnitPlayer {
   return {
     playUnit(startMs: number, endMs: number) {
       cancelPoll();
-      audio.currentTime = startMs / 1000;
-      void audio.play().catch(() => {
+      media.currentTime = startMs / 1000;
+      void media.play().catch(() => {
         /* autoplay rejection — the user taps play again */
       });
       const poll = () => {
-        if (audio.paused) {
+        if (media.paused) {
           // User paused mid-unit; the unit is over.
           cancelPoll();
           return;
         }
-        if (audio.currentTime * 1000 >= endMs) {
-          audio.pause();
+        if (media.currentTime * 1000 >= endMs) {
+          media.pause();
           cancelPoll();
           return;
         }
@@ -57,7 +57,7 @@ export function createAudioUnitPlayer(audio: HTMLAudioElement): UnitPlayer {
     },
     stop() {
       cancelPoll();
-      audio.pause();
+      media.pause();
     },
     dispose() {
       cancelPoll();

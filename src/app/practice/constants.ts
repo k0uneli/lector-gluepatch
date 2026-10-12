@@ -1,7 +1,6 @@
 import type { ClozeDrill } from '@/lib/languages';
 import { ClozeCollection } from '@/types';
 
-export const ANKI_CLOZE_DECK_SETTING_KEY = 'lector-anki-cloze-deck';
 export const ROUND_SIZES = [10, 20, 30, 40, 50] as const;
 
 export const COLLECTION_LABELS: Record<string, string> = {
