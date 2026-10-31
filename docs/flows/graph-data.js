@@ -266,6 +266,12 @@
     summary: "Daily challenge: translate AI-written English sentences built from vocab. AI grades; levels move.",
     steps: ["file:recall-practice", "route:recall-today", "fn:buildRecallSentences", "route:recall-answer", "table:recall_items", "table:vocab"],
   });
+  N("flow:reading-challenge", "flow", "Daily reading", {
+    domain: "practice",
+    md: "practice.md#daily-reading",
+    summary: "Daily AI-written text from the user's marked words, with a set share of new words. Saved as a lesson.",
+    steps: ["file:reading-page", "route:reading-today", "fn:buildReadingChallenge", "table:reading_challenges", "table:lessons", "file:read-page"],
+  });
   N("flow:voice-cloze", "flow", "Voice cloze", {
     domain: "practice",
     md: "practice.md#voice-cloze",
@@ -766,6 +772,9 @@
   N("file:recall-practice", "file", "RecallPractice", { path: "src/app/practice/components/Recall/index.tsx", domain: "practice" });
   N("fn:buildRecallSentences", "fn", "buildRecallSentences", { path: "api/src/lib/recall.ts" });
   N("fn:gradeRecallAnswer", "fn", "gradeRecallAnswer", { path: "api/src/lib/recall.ts" });
+  N("route:reading-today", "route", "POST /api/reading-challenge/today", { path: "api/src/routes/reading-challenge.ts" });
+  N("file:reading-page", "file", "Daily Reading page", { path: "src/app/reading/page.tsx", domain: "practice" });
+  N("fn:buildReadingChallenge", "fn", "buildReadingChallenge", { path: "api/src/lib/reading-challenge.ts" });
   N("route:cloze-put", "route", "PUT /api/cloze/:id", { path: "api/src/routes/cloze.ts" });
   N("route:journal-list", "route", "GET /api/journal", { path: "api/src/routes/journal.ts" });
   N("route:journal-create", "route", "POST /api/journal", { path: "api/src/routes/journal.ts" });
@@ -816,6 +825,7 @@
   N("table:cached_entries", "table", "cached_entries", { path: "api/src/db.ts" });
   N("table:dailyStats", "table", "dailyStats", { path: "api/src/db.ts" });
   N("table:recall_items", "table", "recall_items", { path: "api/src/db.ts" });
+  N("table:reading_challenges", "table", "reading_challenges", { path: "api/src/db.ts" });
   N("table:anki_pending", "table", "anki_pending", { path: "api/src/db.ts" });
   N("table:transcript_segments", "table", "transcript_segments", { path: "api/src/db.ts" });
   N("table:onboarding_progress", "table", "onboarding_progress", { path: "api/src/db.ts" });
@@ -903,7 +913,7 @@
     "flow:cache-translation",
   ]);
   domainFlows("vocabulary", ["flow:save-vocab", "flow:vocab-list", "flow:known-word-import"]);
-  domainFlows("practice", ["flow:practice-word", "flow:dictation", "flow:recall", "flow:voice-cloze", "flow:cloze-drills", "flow:blacklist"]);
+  domainFlows("practice", ["flow:practice-word", "flow:dictation", "flow:recall", "flow:reading-challenge", "flow:voice-cloze", "flow:cloze-drills", "flow:blacklist"]);
   domainFlows("journal", ["flow:journal-submit", "flow:journal-draft"]);
   domainFlows("tutor", ["flow:tutor-chat", "flow:cloze-explain"]);
   domainFlows("listen", ["flow:speak-word", "flow:listen-along", "flow:youtube-captions"]);
@@ -1184,6 +1194,15 @@
   edge("route:recall-answer", "table:knownWords", "writes");
   edge("route:recall-answer", "table:dailyStats", "writes");
   edge("route:recall-verdict", "table:vocab", "writes");
+  edge("flow:reading-challenge", "file:reading-page", "starts");
+  edge("file:reading-page", "route:reading-today", "http");
+  edge("route:reading-today", "table:knownWords", "reads");
+  edge("route:reading-today", "fn:buildReadingChallenge", "calls");
+  edge("fn:buildReadingChallenge", "fn:getProvider", "calls");
+  edge("route:reading-today", "table:reading_challenges", "writes");
+  edge("route:reading-today", "table:lessons", "writes");
+  edge("route:reading-today", "table:collections", "writes");
+  edge("file:reading-page", "file:read-page", "opens");
   edge("flow:dictation", "fn:speak", "calls");
   edge("flow:dictation", "fn:persistReview", "calls");
   edge("flow:voice-cloze", "file:practice-page", "starts");

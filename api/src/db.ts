@@ -492,6 +492,21 @@ function getDb(): Database {
       answeredAt TEXT,
       PRIMARY KEY (userId, language, day, idx)
     );
+
+    -- Daily reading challenge: one generated lesson per day. newPercent is
+    -- 0-100; newWords is JSON string[], the folded words counted as new.
+    CREATE TABLE IF NOT EXISTS reading_challenges (
+      userId TEXT NOT NULL DEFAULT 'local',
+      language TEXT NOT NULL,
+      day TEXT NOT NULL,
+      lessonId TEXT NOT NULL,
+      title TEXT NOT NULL,
+      targetNewPercent REAL NOT NULL,
+      newPercent REAL NOT NULL,
+      newWords TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      PRIMARY KEY (userId, language, day)
+    );
   `);
 
   // Migrations for existing databases

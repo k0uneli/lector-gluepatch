@@ -2954,6 +2954,15 @@ const internalOps: Record<string, OperationDoc> = {
     pathParams: { day: 'Challenge date, YYYY-MM-DD.', idx: 'Sentence index.' },
   },
 
+  'GET /api/reading-challenge/today': {
+    summary: 'Get today’s reading challenge',
+    tag: 'Practice',
+  },
+  'POST /api/reading-challenge/today': {
+    summary: 'Generate today’s reading challenge',
+    tag: 'Practice',
+  },
+
   'POST /api/tokens': { summary: 'Create a personal access token', tag: 'Settings' },
   'GET /api/tokens': { summary: 'List personal access tokens', tag: 'Settings' },
   'POST /api/tokens/verify': { summary: 'Verify the current token', tag: 'Settings' },

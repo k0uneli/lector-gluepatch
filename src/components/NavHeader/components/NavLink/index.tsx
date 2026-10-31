@@ -22,7 +22,8 @@ export default function NavLink({
 }: {
   isMobile: boolean;
   collapsed?: boolean;
-  link: { href: string; label: string };
+  /** shortLabel replaces label in the mobile bottom bar. */
+  link: { href: string; label: string; shortLabel?: string };
   tourTip?: NavTourTip;
 }) {
   const pathname = usePathname();
@@ -49,7 +50,7 @@ export default function NavLink({
         aria-label={collapsed && !isMobile ? link.label : undefined}
       >
         <Icon size="20" />
-        {!(collapsed && !isMobile) && link.label}
+        {!(collapsed && !isMobile) && (isMobile ? (link.shortLabel ?? link.label) : link.label)}
       </Link>
       {tourTip && (
         <OnboardingTip

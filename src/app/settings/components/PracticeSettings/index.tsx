@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { SETTINGS_KEYS } from '../../constants';
 import { getRecallDailyCount, RECALL_COUNT_KEY, RECALL_COUNT_OPTIONS } from '@/lib/recall';
+import ReadingChallengeSettings from './ReadingChallengeSettings';
 
 export default function PracticeSettings() {
   const [hideTranslation, setHideTranslation] = useState(false);
@@ -84,6 +85,11 @@ export default function PracticeSettings() {
           ))}
         </div>
       </div>
+
+      <h3 className="mt-6 mb-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+        Daily reading settings
+      </h3>
+      <ReadingChallengeSettings />
     </section>
   );
 }

@@ -391,6 +391,7 @@ const packFor = packForLanguage;
 // - billing_*, usage_counters, admin_*, classify_batches, anki_pending —
 //   operational state of THIS deployment, not portable learner data
 // - recall_items — the daily recall set; its outcome lives in vocab and dailyStats
+// - reading_challenges — the daily reading index; the texts travel as lessons
 // - dictionaries, sentence banks, TTS audio cache — global shared content,
 //   re-derivable on any install (#216); the user's own accepted AI entries DO
 //   travel as acceptedDictionaryEntries

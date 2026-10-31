@@ -155,7 +155,7 @@ export async function generateRecallCandidates(
   });
 }
 
-function sentenceWords(text: string, pack: LanguageConfig): string[] {
+export function sentenceWords(text: string, pack: LanguageConfig): string[] {
   const segmentation = makeWordSegmentation(parseStoredSegmentWords(buildSegmentWords(text, pack)));
   return tokenizeWords(text, pack, segmentation).map((t) => foldWord(t.text, pack));
 }

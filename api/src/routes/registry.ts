@@ -35,6 +35,7 @@ import onboarding from './onboarding';
 import learnerEvents from './learner-events';
 import emailUnsubscribe from './email-unsubscribe';
 import recall from './recall';
+import readingChallenge from './reading-challenge';
 
 export type RouteMount = {
   /** Mount prefix, exactly as `app.route()` receives it. */
@@ -80,6 +81,7 @@ export const routeMounts: readonly RouteMount[] = [
   { prefix: '/api/lessons', app: lessons },
   { prefix: '/api/vocab', app: vocab },
   { prefix: '/api/recall', app: recall },
+  { prefix: '/api/reading-challenge', app: readingChallenge },
   { prefix: '/api/cloze', app: cloze },
   { prefix: '/api/stats', app: stats },
   { prefix: '/api/settings', app: settings },

@@ -74,6 +74,7 @@ export const TENANT_TABLES = [
   'transcript_segments',
   // Daily recall challenges: today's set and its graded answers.
   'recall_items',
+  'reading_challenges',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];

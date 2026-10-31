@@ -1,6 +1,6 @@
 # Practice domain
 
-This domain runs cloze, voice cloze, and dictation with spaced repetition (SRS), plus the daily recall challenge. Cards live in `clozeSentences`. Mastery 100 also writes the Vocabulary domain.
+This domain runs cloze, voice cloze, and dictation with spaced repetition (SRS), plus the daily recall and reading challenges. Cards live in `clozeSentences`. Mastery 100 also writes the Vocabulary domain.
 
 Intervals in days come from `calculateNextReview`:
 
@@ -141,6 +141,29 @@ A daily challenge, outside the SRS. The user translates English sentences into t
 - Only today's set can be answered. `recall_items` is a tenant table. The takeout leaves it out, as operational state. A personal access token cannot reach the route, because it spends LLM credit.
 
 Tests: `api/src/lib/recall.test.ts`, `api/src/routes/recall.test.ts`, `src/lib/__tests__/recall.test.ts`, `e2e/recall.spec.ts`.
+
+## Daily reading
+
+**App domain:** Practice
+
+A daily text, outside the SRS. The LLM writes it from the words the user has marked. A set share of its words are new. The text is saved as a lesson, so the user reads it in the normal reader.
+
+| Role | Path | Function |
+| --- | --- | --- |
+| Screen | `src/app/reading/page.tsx` | `ReadingChallengePage` |
+| Settings | `src/app/settings/components/PracticeSettings/ReadingChallengeSettings.tsx` | `ReadingChallengeSettings` |
+| Client | `src/lib/reading-challenge.ts` | `getReadingChallenge`, `startReadingChallenge` |
+| API | `api/src/routes/reading-challenge.ts` | `GET/POST /today` |
+| Logic | `api/src/lib/reading-challenge.ts` | `buildReadingChallenge`, `CoverageMeter`, `selectWords` |
+
+- Settings live in localStorage and go in the `POST /today` body: `words` (100 to 600, default 200) and `newPercent` (0 to 20, default 5).
+- The source is `knownWords`. The route needs 30 words in a level or known state. Words in the new or ignored state are not in the prompt. Learning words come first, and up to 25 of them form a focus list.
+- `CoverageMeter` measures the reply. With a dictionary it uses `VocabMatcher`, so inflected forms and grammar words count as known. Without one it compares folded surface forms. An ignored word counts as known.
+- When the draft is more than 3 points over the target, one revision call names the new words to replace. The route keeps whichever text has fewer new words. The plan counts this as one LLM request.
+- The text goes into the per-language "Daily Reading" collection as `<day> · <title>`. The route creates the collection on first use, or again when the user deletes it. When the user deletes today's lesson, `GET /today` drops the row and a new text can be written.
+- `reading_challenges` is a tenant table. The takeout leaves it out, because the texts travel as lessons. A personal access token cannot reach the route, because it spends LLM credit.
+
+Tests: `api/src/lib/reading-challenge.test.ts`, `api/src/routes/reading-challenge.test.ts`, `src/lib/__tests__/reading-challenge.test.ts`, `e2e/reading-challenge.spec.ts`.
 
 ## Voice cloze
 
