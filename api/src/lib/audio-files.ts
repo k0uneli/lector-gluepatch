@@ -78,3 +78,47 @@ export function deleteAudioFile(audioPath: string | null | undefined): void {
     /* already gone */
   }
 }
+
+/**
+ * Serve a file with `Range` support (206 + Content-Range). Browsers refuse to
+ * scrub an <audio> or <video> element without it.
+ */
+export function serveRangedFile(
+  file: ReturnType<typeof Bun.file>,
+  contentType: string,
+  range: string | undefined,
+): Response {
+  const size = file.size;
+  const match = range?.match(/^bytes=(\d*)-(\d*)$/);
+  if (match && (match[1] !== '' || match[2] !== '')) {
+    // Suffix form (bytes=-N) means "the last N bytes".
+    const start =
+      match[1] === '' ? Math.max(0, size - parseInt(match[2], 10)) : parseInt(match[1], 10);
+    let end = match[1] !== '' && match[2] !== '' ? parseInt(match[2], 10) : size - 1;
+    end = Math.min(end, size - 1);
+    if (start > end || start >= size) {
+      return new Response(null, {
+        status: 416,
+        headers: { 'Content-Range': `bytes */${size}` },
+      });
+    }
+    return new Response(file.slice(start, end + 1), {
+      status: 206,
+      headers: {
+        'Content-Type': contentType,
+        'Content-Range': `bytes ${start}-${end}/${size}`,
+        'Content-Length': String(end - start + 1),
+        'Accept-Ranges': 'bytes',
+      },
+    });
+  }
+
+  return new Response(file, {
+    status: 200,
+    headers: {
+      'Content-Type': contentType,
+      'Content-Length': String(size),
+      'Accept-Ranges': 'bytes',
+    },
+  });
+}

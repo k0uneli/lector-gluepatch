@@ -14,6 +14,7 @@ import { getAuthEngine, runAuthMigrations, resolveTrustedOrigins } from './lib/a
 import { HTTPException } from 'hono/http-exception';
 import { startClassifyWorker } from './lib/classify-worker';
 import { startTranscribeWorker } from './lib/transcribe-worker';
+import { startPodcastWorker } from './lib/podcast/worker';
 import { startDictWorker } from './lib/dict-worker';
 import { startLifecycleEmailWorker } from './lib/lifecycle-email';
 import { isByokAvailable } from './lib/byok';
@@ -188,6 +189,9 @@ startClassifyWorker();
 // TRANSCRIBE_WORKER=1 — same opt-in shape as the classifier, so it never runs
 // under test/e2e.
 startTranscribeWorker();
+
+// Background podcast generator. No-op unless PODCAST_WORKER=1, like the two above.
+startPodcastWorker();
 
 // Runtime dictionary fetch (#438). The image ships no databases, so this loop
 // downloads the ones DICT_LANGS and the opted-in accounts ask for. It runs

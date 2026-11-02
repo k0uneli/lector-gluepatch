@@ -62,7 +62,7 @@ const FLUENCY_STATS_QUERY_SCOPE = 'stats:fluency';
 const READING_STATS_QUERY_SCOPE = 'stats:reading';
 const READINGS_QUERY_SCOPE = 'readings';
 
-function invalidateCollections(): void {
+export function invalidateCollections(): void {
   invalidateActiveScope(COLLECTIONS_QUERY_SCOPE);
 }
 
@@ -381,9 +381,13 @@ export async function getLessonSegments(lessonId: string): Promise<AudioTranscri
   return res.json();
 }
 
-/** Direct (range-seekable) audio URL for an audio-backed lesson — feed it to <audio src>. */
-export function lessonAudioUrl(lessonId: string): string {
-  return apiUrl(`/api/lessons/${lessonId}/audio`);
+/**
+ * Direct (range-seekable) audio URL for an audio-backed lesson — feed it to <audio src>.
+ * `version` changes the URL when the file grows, so the player loads it again.
+ */
+export function lessonAudioUrl(lessonId: string, version?: number): string {
+  const url = apiUrl(`/api/lessons/${lessonId}/audio`);
+  return version === undefined ? url : `${url}?v=${version}`;
 }
 
 /** Direct (range-seekable) video URL for video-backed lessons — feed it to <video src>. */

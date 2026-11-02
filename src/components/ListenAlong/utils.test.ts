@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'vitest';
 import type { AudioTranscriptSegment } from '@/types';
-import { activeSegmentIndex, formatClock, nextPlaybackRate, PLAYBACK_RATES } from './utils';
+import {
+  activeSegmentIndex,
+  contextSegment,
+  formatClock,
+  isNarration,
+  nextPlaybackRate,
+  PLAYBACK_RATES,
+  stepToLessonLine,
+} from './utils';
 
 const SEGMENTS: AudioTranscriptSegment[] = [
   { idx: 0, startMs: 0, endMs: 2000, text: 'Een.' },
@@ -45,5 +53,33 @@ describe('nextPlaybackRate', () => {
 
   test('recovers to the start of the ladder from an unknown rate', () => {
     expect(nextPlaybackRate(3)).toBe(PLAYBACK_RATES[0]);
+  });
+});
+
+const PODCAST: AudioTranscriptSegment[] = [
+  { idx: 0, startMs: 0, endMs: 1000, text: 'Paragraph 1.', lang: 'en' },
+  { idx: 1, startMs: 1000, endMs: 2000, text: 'Кот видит дом.', lang: null },
+  { idx: 2, startMs: 2000, endMs: 3000, text: '«видит» means sees.', lang: 'en' },
+  { idx: 3, startMs: 3000, endMs: 4000, text: 'Дом большой.' },
+  { idx: 4, startMs: 4000, endMs: 5000, text: 'The end.', lang: 'en' },
+];
+
+describe('podcast narration rows', () => {
+  test('a line in another language than the lesson is narration', () => {
+    expect(PODCAST.map((s) => isNarration(s, 'ru'))).toEqual([true, false, true, false, true]);
+    expect(isNarration(PODCAST[0], 'en')).toBe(false);
+  });
+
+  test('a word in narration takes the lesson-language line before it as its sentence', () => {
+    expect(contextSegment(PODCAST, 2, 'ru').text).toBe('Кот видит дом.');
+    expect(contextSegment(PODCAST, 3, 'ru').text).toBe('Дом большой.');
+    expect(contextSegment(PODCAST, 0, 'ru').text).toBe('Paragraph 1.');
+  });
+
+  test('shadow steps skip narration', () => {
+    expect(stepToLessonLine(PODCAST, 1, 1, 'ru')).toBe(3);
+    expect(stepToLessonLine(PODCAST, 3, -1, 'ru')).toBe(1);
+    expect(stepToLessonLine(PODCAST, 3, 1, 'ru')).toBe(3);
+    expect(stepToLessonLine(PODCAST, 0, 1, 'ru')).toBe(1);
   });
 });

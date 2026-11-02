@@ -46,6 +46,11 @@ const SETTING_VALUE_BYTE_LIMITS: Record<string, number> = {
   sttModel: 256,
   sttApiKey: 2048,
   ankiNoteFormats: 6 * 1024,
+  podcastEngine: Buffer.byteLength(JSON.stringify('elevenlabs'), 'utf8'),
+  // Chirp 3 HD persona names are one short word.
+  podcastGoogleVoice: 24,
+  podcastSlowTempo: 8,
+  podcastExplainBelow: Buffer.byteLength(JSON.stringify('level3'), 'utf8'),
 };
 
 export function settingValueByteLimit(key: string): number {
@@ -89,6 +94,11 @@ export const KNOWN_SETTING_KEYS = new Set([
   'sttUrl',
   'sttModel',
   'sttApiKey',
+  // Podcast preferences. Engine endpoints and keys come from the server env.
+  'podcastEngine',
+  'podcastGoogleVoice',
+  'podcastSlowTempo',
+  'podcastExplainBelow',
   // Legacy provider keys — no longer written by the UI, but db.ts boot
   // migrations still read them and older DBs/CLI flows may round-trip them.
   'ollamaModel',
@@ -139,9 +149,17 @@ function validateAnkiNoteFormats(value: unknown): string | null {
 }
 export const STT_SOURCES = ['asr', 'custom'] as const;
 export const STT_PROTOCOLS = ['http', 'realtime'] as const;
+export const PODCAST_ENGINES = ['google', 'local', 'elevenlabs'] as const;
+/** Words below this state get explained. 'level3' explains new, level1 and level2 words. */
+export const PODCAST_EXPLAIN_LEVELS = ['level1', 'level3', 'known'] as const;
+/** ffmpeg's atempo filter takes 0.5 and up; faster than 1 defeats the slow read. */
+export const PODCAST_MIN_SLOW_TEMPO = 0.5;
+export const PODCAST_MAX_SLOW_TEMPO = 1;
 const STT_ENUMS: Record<string, ReadonlySet<string>> = {
   sttSource: new Set<string>(STT_SOURCES),
   sttProtocol: new Set<string>(STT_PROTOCOLS),
+  podcastEngine: new Set<string>(PODCAST_ENGINES),
+  podcastExplainBelow: new Set<string>(PODCAST_EXPLAIN_LEVELS),
 };
 
 export function validateSettingWrite(key: string, value: unknown): string | null {
@@ -185,6 +203,16 @@ export function validateSettingWrite(key: string, value: unknown): string | null
   if (sttValues && value !== '' && value !== null) {
     if (typeof value !== 'string' || !sttValues.has(value)) {
       return `${key} must be one of: ${[...sttValues].join(', ')}`;
+    }
+  }
+  if (key === 'podcastSlowTempo' && value !== '' && value !== null) {
+    if (
+      typeof value !== 'number' ||
+      !Number.isFinite(value) ||
+      value < PODCAST_MIN_SLOW_TEMPO ||
+      value > PODCAST_MAX_SLOW_TEMPO
+    ) {
+      return `podcastSlowTempo must be a number from ${PODCAST_MIN_SLOW_TEMPO} to ${PODCAST_MAX_SLOW_TEMPO}`;
     }
   }
   if (URL_SETTING_KEYS.has(key) && value !== '' && value !== null) {

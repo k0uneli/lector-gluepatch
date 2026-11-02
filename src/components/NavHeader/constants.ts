@@ -1,8 +1,18 @@
-import { BookOpen, Clipboard, Pencil, List, Library, ChartBar, Settings } from 'lucide-react';
+import {
+  BookOpen,
+  Clipboard,
+  Pencil,
+  List,
+  Library,
+  ChartBar,
+  Podcast,
+  Settings,
+} from 'lucide-react';
 
 export const navLinks: Array<{ href: string; label: string; shortLabel?: string }> = [
   { href: '/', label: 'Library' },
   { href: '/practice', label: 'Practice' },
+  { href: '/podcast', label: 'Podcast' },
   { href: '/reading', label: 'Daily Reading', shortLabel: 'Reading' },
   { href: '/journal', label: 'Journal' },
   { href: '/vocab', label: 'Vocab' },
@@ -13,6 +23,7 @@ export const navLinks: Array<{ href: string; label: string; shortLabel?: string 
 export const iconMap: Record<string, React.FC<{ size?: number | string }>> = {
   '/': Library,
   '/practice': Clipboard,
+  '/podcast': Podcast,
   '/reading': BookOpen,
   '/journal': Pencil,
   '/vocab': List,

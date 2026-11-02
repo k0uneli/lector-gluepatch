@@ -507,6 +507,53 @@ function getDb(): Database {
       createdAt TEXT NOT NULL,
       PRIMARY KEY (userId, language, day)
     );
+
+    -- Podcast shows: one per source book. sourceKey is the book's collectionId,
+    -- or 'standalone:<lang>' for lessons outside a collection.
+    CREATE TABLE IF NOT EXISTS podcast_shows (
+      userId TEXT NOT NULL DEFAULT 'local',
+      id TEXT NOT NULL,
+      language TEXT NOT NULL,
+      sourceKey TEXT NOT NULL,
+      collectionId TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      PRIMARY KEY (userId, id),
+      UNIQUE (userId, sourceKey)
+    );
+
+    -- Podcast episodes. paragraphs is JSON string[], the source text copied at
+    -- creation; paraFrom/paraTo are 1-based and inclusive in the source lesson.
+    CREATE TABLE IF NOT EXISTS podcast_episodes (
+      userId TEXT NOT NULL DEFAULT 'local',
+      id TEXT NOT NULL,
+      showId TEXT NOT NULL,
+      language TEXT NOT NULL,
+      sourceLessonId TEXT NOT NULL,
+      lessonId TEXT NOT NULL,
+      title TEXT NOT NULL,
+      sourceTitle TEXT NOT NULL,
+      bookTitle TEXT,
+      paraFrom INTEGER NOT NULL,
+      paraTo INTEGER NOT NULL,
+      paragraphs TEXT NOT NULL,
+      paraDone INTEGER NOT NULL DEFAULT 0,
+      -- JSON string[] of folded words already explained in earlier paragraphs.
+      explained TEXT NOT NULL DEFAULT '[]',
+      engine TEXT NOT NULL,
+      status TEXT NOT NULL,
+      error TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      completedAt TEXT,
+      PRIMARY KEY (userId, id)
+    );
+
+    CREATE TABLE IF NOT EXISTS podcast_feed_tokens (
+      userId TEXT NOT NULL PRIMARY KEY,
+      tokenHash TEXT NOT NULL UNIQUE,
+      createdAt TEXT NOT NULL
+    );
   `);
 
   // Migrations for existing databases
@@ -657,6 +704,14 @@ function getDb(): Database {
   }
   if (!lessonAudioCols.some((c) => c.name === 'transcriptionAttempts')) {
     _db.exec('ALTER TABLE lessons ADD COLUMN transcriptionAttempts INTEGER NOT NULL DEFAULT 0');
+  }
+
+  // NULL is the lesson's own language; podcast narration rows hold 'en'.
+  const segmentCols = _db.prepare('PRAGMA table_info(transcript_segments)').all() as {
+    name: string;
+  }[];
+  if (!segmentCols.some((c) => c.name === 'lang')) {
+    _db.exec('ALTER TABLE transcript_segments ADD COLUMN lang TEXT');
   }
 
   // Cloze display tokens (#289 4.3). `clozeIndex` indexes into this array. A
@@ -1816,8 +1871,11 @@ export interface JournalEntryRow {
   updatedAt: string;
 }
 
-/** Lifecycle of an audio-backed lesson's transcription (#185); NULL on text lessons. */
-export type TranscriptionStatus = 'pending' | 'processing' | 'done' | 'error';
+/**
+ * Lifecycle of an audio-backed lesson's transcription (#185); NULL on text
+ * lessons. 'generating' is a podcast episode that is still gaining paragraphs.
+ */
+export type TranscriptionStatus = 'pending' | 'processing' | 'generating' | 'done' | 'error';
 
 export interface LessonRow {
   userId: string;
@@ -1857,6 +1915,42 @@ export interface TranscriptSegmentRow {
   startMs: number;
   endMs: number;
   text: string;
+  lang: string | null;
+}
+
+export type PodcastEpisodeStatus = 'pending' | 'generating' | 'done' | 'error';
+
+export interface PodcastEpisodeRow {
+  userId: string;
+  id: string;
+  showId: string;
+  language: string;
+  sourceLessonId: string;
+  lessonId: string;
+  title: string;
+  sourceTitle: string;
+  bookTitle: string | null;
+  paraFrom: number;
+  paraTo: number;
+  paragraphs: string;
+  paraDone: number;
+  explained: string;
+  engine: string;
+  status: PodcastEpisodeStatus;
+  error: string | null;
+  attempts: number;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
+export interface PodcastShowRow {
+  userId: string;
+  id: string;
+  language: string;
+  sourceKey: string;
+  collectionId: string;
+  createdAt: string;
 }
 
 export interface VocabRow {

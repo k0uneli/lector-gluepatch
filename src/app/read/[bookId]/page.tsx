@@ -8,6 +8,7 @@ import OnboardingCoach from '@/components/OnboardingCoach';
 import TranslationDrawer, { TranslationDrawerSlot } from '@/components/TranslationDrawer';
 import { Button } from '@/components/ui/button';
 import ListenAlong from '@/components/ListenAlong';
+import { getPodcastEpisode, podcastEpisodeIdOf, type PodcastEpisode } from '@/lib/podcast';
 import {
   type Lesson,
   type LessonSummary,
@@ -111,7 +112,12 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   const [error, setError] = useState<string | null>(null);
   // Listen-along (#185): the audio lesson's transcript segments + mode toggle.
   const [segments, setSegments] = useState<AudioTranscriptSegment[]>([]);
-  const [listenMode, setListenMode] = useState(false);
+  // Null until the learner chooses; podcast lessons open in listen-along.
+  const [listenMode, setListenMode] = useState<boolean | null>(null);
+  // A podcast lesson gains paragraphs while it plays. `podcastProgress` is
+  // what the server has made; bumping `segmentsVersion` loads it.
+  const [podcastProgress, setPodcastProgress] = useState<PodcastEpisode | null>(null);
+  const [segmentsVersion, setSegmentsVersion] = useState(0);
   const [readerWordStates, setReaderWordStates] = useState<Map<string, WordState>>(new Map());
   const readerWordStatesRef = useRef(readerWordStates);
   const readerWordStateLoadRef = useRef<{
@@ -210,7 +216,7 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   // the lesson while it's still transcribing so the reader unlocks by itself.
   const transcriptionStatus = lesson?.transcriptionStatus ?? null;
   useEffect(() => {
-    if (transcriptionStatus === 'done') {
+    if (transcriptionStatus === 'done' || transcriptionStatus === 'generating') {
       let cancelled = false;
       getLessonSegments(lessonId).then((loaded) => {
         if (!cancelled) setSegments(loaded);
@@ -229,7 +235,37 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
       }
     }, 4000);
     return () => clearInterval(timer);
-  }, [lessonId, transcriptionStatus]);
+  }, [lessonId, transcriptionStatus, segmentsVersion]);
+
+  const loadNewParagraphs = useCallback(async () => {
+    const updated = await getLesson(lessonId).catch(() => undefined);
+    if (updated) setLesson(updated);
+    setSegmentsVersion((v) => v + 1);
+  }, [lessonId]);
+
+  const podcastEpisodeId = podcastEpisodeIdOf(lesson);
+  const hasSegments = segments.length > 0;
+  useEffect(() => {
+    if (transcriptionStatus !== 'generating' || !podcastEpisodeId) return;
+    let cancelled = false;
+    const check = async () => {
+      const episode = await getPodcastEpisode(podcastEpisodeId);
+      if (cancelled || !episode) return;
+      setPodcastProgress(episode);
+      if (episode.status === 'done' || episode.status === 'error') {
+        const updated = await getLesson(lessonId).catch(() => undefined);
+        if (!cancelled && updated) setLesson(updated);
+      } else if (!hasSegments && episode.paraDone > 0) {
+        await loadNewParagraphs();
+      }
+    };
+    void check();
+    const timer = setInterval(() => void check(), 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [hasSegments, lessonId, loadNewParagraphs, podcastEpisodeId, transcriptionStatus]);
 
   async function handleRetryTranscription() {
     try {
@@ -1339,6 +1375,24 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
       </div>
     );
   }
+  if (lesson.transcriptionStatus === 'generating' && segments.length === 0) {
+    return (
+      <div
+        className="flex min-h-screen flex-col items-center justify-center gap-4 bg-card p-8"
+        data-testid="podcast-generating"
+      >
+        <LoaderCircle className="h-8 w-8 animate-spin text-muted-foreground" />
+        <div className="text-xl text-foreground">Making your podcast…</div>
+        <p className="max-w-sm text-center text-sm text-muted-foreground">
+          The first paragraph of &ldquo;{lesson.title}&rdquo; is on its way. It opens here by
+          itself, and the next paragraphs arrive while you listen.
+        </p>
+        <Button variant="secondary" onClick={() => router.push('/podcast')}>
+          Back to Podcast
+        </Button>
+      </div>
+    );
+  }
   if (lesson.transcriptionStatus === 'error') {
     return (
       <div
@@ -1407,11 +1461,39 @@ export default function ReadPage({ params }: { params: Promise<{ bookId: string 
   return (
     <div className="flex h-dvh flex-col overflow-x-hidden bg-card 2xl:flex-row print:block print:h-auto print:overflow-visible">
       <div className="relative min-h-0 flex-1 overflow-hidden print:block print:h-auto print:overflow-visible">
-        {listenMode && segments.length > 0 && !isVideoLesson(lesson) ? (
+        {(listenMode ?? lesson.sourceType === 'podcast') &&
+        segments.length > 0 &&
+        !isVideoLesson(lesson) ? (
           <ListenAlong
             lesson={lesson}
             segments={segments}
-            audioUrl={lessonAudioUrl(lesson.id)}
+            audioUrl={
+              lesson.sourceType === 'podcast'
+                ? lessonAudioUrl(lesson.id, lesson.audioDurationMs ?? 0)
+                : lessonAudioUrl(lesson.id)
+            }
+            banner={
+              lesson.transcriptionStatus === 'generating' && podcastProgress ? (
+                <div
+                  className="flex items-center justify-between gap-2 border-b border-border bg-muted/50 px-4 py-2 text-sm text-muted-foreground"
+                  data-testid="podcast-progress"
+                >
+                  <span>
+                    {podcastProgress.paraDone} of {podcastProgress.paraTotal} paragraphs ready
+                  </span>
+                  {podcastProgress.durationMs > (lesson.audioDurationMs ?? 0) && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void loadNewParagraphs()}
+                      data-testid="podcast-load-new"
+                    >
+                      Load new paragraphs
+                    </Button>
+                  )}
+                </div>
+              ) : undefined
+            }
             onAddLine={ankiTransport === 'ankiconnect' ? addLineToAnki : undefined}
             knownWordsMap={readerWordStates}
             wordPanelOpen={wordPanel.isOpen}

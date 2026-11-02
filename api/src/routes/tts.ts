@@ -6,8 +6,8 @@ import { getCurrentUserId } from '../lib/user';
 import { getLanguageConfig } from '../lib/languages';
 import { entitlements, planLimitResponse, type UsageReservation } from '../lib/entitlements';
 import { getTtsCache, ttsCacheKey } from '../lib/tts-cache';
+import { GoogleTtsError, synthesizeWithGoogle } from '../lib/tts/google';
 
-const GOOGLE_TTS_URL = 'https://texttospeech.googleapis.com/v1/text:synthesize';
 const MAX_TTS_BODY_BYTES = 32 * 1024;
 // Google Cloud TTS caps SynthesisInput content at 5,000 UTF-8 bytes. Reject
 // locally before reserving quota or paying for an upstream request.
@@ -19,20 +19,6 @@ const MAX_TTS_TEXT_BYTES = 5_000;
 const ESPEAK_BASE_WPM = 175;
 const ESPEAK_MIN_WPM = 80;
 const ESPEAK_MAX_WPM = 450;
-
-interface SynthesizeRequest {
-  input: { text: string };
-  voice: {
-    languageCode: string;
-    name?: string;
-    ssmlGender?: 'MALE' | 'FEMALE' | 'NEUTRAL';
-  };
-  audioConfig: {
-    audioEncoding: 'MP3' | 'LINEAR16' | 'OGG_OPUS';
-    speakingRate?: number;
-    pitch?: number;
-  };
-}
 
 /**
  * Synthesize via self-hosted eSpeak NG (#307 §3.2c) — the only
@@ -172,46 +158,28 @@ app.post(
       if (!ttsVerdict.allowed) return planLimitResponse(c, ttsVerdict);
       reservation = ttsVerdict.reservation;
 
-      const synthesizeRequest: SynthesizeRequest = {
-        input: { text },
-        voice: {
+      let audioContent: string;
+      try {
+        audioContent = await synthesizeWithGoogle({
+          apiKey,
+          text,
           languageCode: langConfig.ttsCode,
-          name: langConfig.ttsVoice,
-        },
-        audioConfig: {
-          audioEncoding: 'MP3',
+          voiceName: langConfig.ttsVoice,
           speakingRate,
           pitch: 0,
-        },
-      };
-
-      const response = await fetch(`${GOOGLE_TTS_URL}?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(synthesizeRequest),
-      });
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        console.error('Google TTS error:', error);
+        });
+      } catch (err) {
+        if (!(err instanceof GoogleTtsError)) throw err;
+        console.error('Google TTS error:', err.message);
         // Return fallback flag so the client can use browser TTS.
-        return c.json(
-          { error: error.error?.message || 'TTS API error', fallback: true },
-          response.status as ContentfulStatusCode,
-        );
-      }
-
-      const data = await response.json();
-
-      if (!data.audioContent) {
-        return c.json({ error: 'No audio content returned', fallback: true }, 500);
+        return c.json({ error: err.message, fallback: true }, err.status as ContentfulStatusCode);
       }
 
       earned = true; // Google synthesized the characters — the usage is real
       // Best-effort store (put never throws): the next request for this tuple —
       // from any user — is served from cache instead of re-billed.
-      await cache.put(cacheKey, new Uint8Array(Buffer.from(data.audioContent, 'base64')));
-      return c.json({ audioContent: data.audioContent, contentType: 'audio/mp3' });
+      await cache.put(cacheKey, new Uint8Array(Buffer.from(audioContent, 'base64')));
+      return c.json({ audioContent, contentType: 'audio/mp3' });
     } catch (error) {
       console.error('TTS route error:', error);
       return c.json({ error: 'Internal server error', fallback: true }, 500);

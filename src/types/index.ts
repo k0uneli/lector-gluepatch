@@ -41,8 +41,11 @@ export interface CollectionGroup {
   collectionCount?: number;
 }
 
-/** Lifecycle of an audio-backed lesson's transcription (#185); absent on text lessons. */
-export type TranscriptionStatus = 'pending' | 'processing' | 'done' | 'error';
+/**
+ * Lifecycle of an audio-backed lesson's transcription (#185); absent on text
+ * lessons. 'generating' is a podcast episode that is still gaining paragraphs.
+ */
+export type TranscriptionStatus = 'pending' | 'processing' | 'generating' | 'done' | 'error';
 
 /** One timestamped transcript cue for a YouTube-imported lesson (#334). */
 export interface TranscriptSegment {
@@ -122,6 +125,8 @@ export interface AudioTranscriptSegment {
   startMs: number;
   endMs: number;
   text: string;
+  /** Set when the line is in another language, e.g. 'en' for podcast narration. */
+  lang?: string | null;
 }
 
 export interface VocabEntry {

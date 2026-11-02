@@ -392,6 +392,8 @@ const packFor = packForLanguage;
 //   operational state of THIS deployment, not portable learner data
 // - recall_items — the daily recall set; its outcome lives in vocab and dailyStats
 // - reading_challenges — the daily reading index; the texts travel as lessons
+// - podcast_shows, podcast_episodes, podcast_feed_tokens — generation state and
+//   the feed credential; the generated lessons travel like other audio lessons
 // - dictionaries, sentence banks, TTS audio cache — global shared content,
 //   re-derivable on any install (#216); the user's own accepted AI entries DO
 //   travel as acceptedDictionaryEntries

@@ -16,6 +16,7 @@ import {
 } from '../lib/storage-limits';
 import { validateOptionalLanguage, validateOwnedReference } from '../lib/persisted-input';
 import { deleteAudioFile } from '../lib/audio-files';
+import { forgetPodcastCollection, forgetPodcastLessons } from '../lib/podcast/store';
 
 const app = new Hono();
 
@@ -274,6 +275,15 @@ app.delete('/:id', (c) => {
            )
          )`,
     ).run(userId, id, id, userId, lang);
+    forgetPodcastLessons(
+      userId,
+      (
+        db
+          .prepare('SELECT id FROM lessons WHERE collectionId = ? AND userId = ? AND language = ?')
+          .all(id, userId, lang) as { id: string }[]
+      ).map((row) => row.id),
+    );
+    forgetPodcastCollection(userId, id);
     db.prepare('DELETE FROM lessons WHERE collectionId = ? AND userId = ? AND language = ?').run(
       id,
       userId,

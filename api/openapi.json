@@ -8644,7 +8644,11 @@
                     "sttProtocol",
                     "sttUrl",
                     "sttModel",
-                    "sttApiKey"
+                    "sttApiKey",
+                    "podcastEngine",
+                    "podcastGoogleVoice",
+                    "podcastSlowTempo",
+                    "podcastExplainBelow"
                   ]
                 }
               }
@@ -11796,6 +11800,13 @@
           },
           "text": {
             "type": "string"
+          },
+          "lang": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Language of the line when it differs from the lesson, e.g. `en` for podcast narration. Null means the lesson language."
           }
         },
         "required": [

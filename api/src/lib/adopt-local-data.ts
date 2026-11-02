@@ -75,6 +75,11 @@ export const TENANT_TABLES = [
   // Daily recall challenges: today's set and its graded answers.
   'recall_items',
   'reading_challenges',
+  // Podcast shows and episodes move with the lessons they generate. The feed
+  // token is a credential for this instance's URL, but it is still a tenant row.
+  'podcast_shows',
+  'podcast_episodes',
+  'podcast_feed_tokens',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];

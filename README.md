@@ -80,6 +80,7 @@ If you do not want to run a server, use the hosted app at [app.lector.dev](https
 - **Cloze practice.** Frequency-ordered sentences. Choose an answer from a list, type the missing word, or say it. Voice mode shows each word as the speech model hears it. Voice mode is for self-hosted installs. Spaced repetition (SRS) with mastery levels. Russian and Greek have two grammar drills. In the first, you type only the case or verb ending. In the second, you see the dictionary form and write the form that the sentence needs. Russian verbs show both aspects, for example читать / прочитать. The drills need the language's dictionary.
 - **Recall.** A daily challenge. You translate English sentences into your target language, 10 a day by default. The sentences use words from your vocabulary. The AI writes the sentences and grades your answers, and you can change a grade. A correct answer moves its words up one level. A wrong answer moves them down. Recall needs an AI provider.
 - **Daily reading.** A new text each day, written from the words that you marked. In Settings, set the length (200 words by default) and the percentage of new words (5% by default). The text opens in the reader and stays in your library. Daily reading needs an AI provider.
+- **Podcast.** Make an episode from a chapter of a book, in the style of a slow-reading podcast. Each sentence is read slowly, then the narrator explains in English the words that you have not learned yet, with grammar and figures of speech. Each paragraph ends with a reading at normal speed. The episode plays as a listen-along lesson, so you can look up and save words from its transcript. Each book is a private podcast feed for a phone app on a self-hosted install. The script needs an AI provider. The voice uses Google Cloud, a local speech server on your own GPU, or ElevenLabs.
 - **Vocabulary.** Save words as you read. Track known and learning states. Save phrases as well as single words.
 - **Anki.** The [Lector Sync add-on](https://ankiweb.net/shared/info/1098736891) on AnkiWeb is the recommended integration. The add-on code is `1098736891`. Cloud mode and a remote HTTPS self-host always use it. A local self-host can instead push cards to AnkiConnect on the computer that runs Anki. Reviews in Anki can update mastery in Lector.
 - **Tutor and journal.** Ask grammar questions in plain language. Write in the target language. The tutor returns corrections. Use the Claude API or a local model.
@@ -165,6 +166,10 @@ If you want a file, copy `.env.example` to `.env`. Compose also reads the proces
 | `DICT_FETCH` | Set to `0` to never download a dictionary. Use it with the `:full` image. |
 | `DICT_DIR` | Where the dictionaries live. The default is the `lector-dict` volume. |
 | `TRANSCRIBE_WORKER` | Set to `1` to transcribe podcast uploads. Needs a Whisper endpoint. See [`deploy/README.md`](deploy/README.md). |
+| `PODCAST_WORKER` | Set to `1` to make podcast episodes. Needs an AI provider and a voice engine. See [`deploy/README.md`](deploy/README.md). |
+| `GOOGLE_CLOUD_API_KEY` | Google Cloud text-to-speech for read-aloud and podcast episodes. Optional. |
+| `PODCAST_TTS_URL` | Local OpenAI-compatible speech server for podcast episodes. Self-host only. |
+| `ELEVENLABS_API_KEY` | ElevenLabs voices for podcast episodes. Self-host only. Set `ELEVENLABS_VOICE_ID` too. |
 
 The app runs with no API keys. Claude is only required for rare words, phrase translation, and the tutor.
 

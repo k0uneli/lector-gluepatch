@@ -8,3 +8,4 @@ export * from '../../languages/graphemes';
 export * from '../../languages/tokenizer';
 export * from '../../languages/morphology';
 export * from '../../languages/inflection';
+export * from '../../languages/narration';

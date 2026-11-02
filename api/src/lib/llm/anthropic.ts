@@ -30,6 +30,8 @@ export interface AnthropicProviderOptions {
   chatModel?: string;
   /** Background word→domain classification — cheap, high volume (e.g. claude-haiku-4-5). */
   classificationModel?: string;
+  /** Podcast episode scripts: long JSON output, one call per paragraph. */
+  podcastModel?: string;
 }
 
 export class AnthropicProvider implements LLMProvider {
@@ -41,6 +43,7 @@ export class AnthropicProvider implements LLMProvider {
     phrase: string;
     chat: string;
     classification: string;
+    podcast: string;
   };
   private useAgentSdk: boolean;
   private oauthToken: string | undefined;
@@ -88,6 +91,7 @@ export class AnthropicProvider implements LLMProvider {
         options?.classificationModel ||
         process.env.ANTHROPIC_CLASSIFICATION_MODEL ||
         DEFAULT_CLASSIFICATION_MODEL,
+      podcast: options?.podcastModel || process.env.ANTHROPIC_PODCAST_MODEL || base,
     };
   }
 
@@ -111,6 +115,8 @@ export class AnthropicProvider implements LLMProvider {
         return this.models.chat;
       case 'word-classification':
         return this.models.classification;
+      case 'podcast-script':
+        return this.models.podcast;
       default:
         return this.models.default;
     }

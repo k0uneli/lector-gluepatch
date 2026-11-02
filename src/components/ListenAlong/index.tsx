@@ -14,7 +14,15 @@
 // Tapping any word auto-pauses and opens the translation drawer via the same
 // onWordClick contract MarkdownReader uses, so vocab actions work identically.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   ArrowLeft,
   BookOpenText,
@@ -27,7 +35,14 @@ import {
   SkipForward,
 } from 'lucide-react';
 import type { AudioTranscriptSegment, Lesson, WordState } from '@/types';
-import { foldWord, getLanguageConfig, isValidLanguageCode, tokenize } from '@/lib/languages';
+import {
+  foldWord,
+  getLanguageConfig,
+  isValidLanguageCode,
+  splitNarration,
+  tokenize,
+  type LanguageConfig,
+} from '@/lib/languages';
 import { useActiveLanguage } from '@/utils/hooks';
 import {
   computePhraseHighlightSet,
@@ -40,11 +55,25 @@ import WordCell from '@/components/WordCell';
 import AddLineToAnki, { type TranscriptLine } from '@/components/AddLineToAnki';
 import type { WordSource } from '@/components/MarkdownReader/types';
 import { createAudioUnitPlayer, type UnitPlayer } from './drill-player';
-import { activeSegmentIndex, formatClock, nextPlaybackRate } from './utils';
+import {
+  activeSegmentIndex,
+  contextSegment,
+  formatClock,
+  isNarration,
+  nextPlaybackRate,
+  stepToLessonLine,
+} from './utils';
 
 const SKIP_SECONDS = 5;
 const NO_PHRASE: string[] = [];
 const NO_PHRASE_SET = new Set<number>();
+
+/** Narration text stays plain; its «» spans are lesson-language words. */
+function narrationParts(text: string, pack: LanguageConfig): ReturnType<typeof splitWords> {
+  return splitNarration(text).flatMap((part) =>
+    part.target ? splitWords(part.text, pack) : [{ text: part.text, isWord: false }],
+  );
+}
 
 export interface ListenAlongProps {
   lesson: Lesson;
@@ -57,6 +86,8 @@ export interface ListenAlongProps {
   onExit: () => void;
   /** When set, each line gets a hover button that sends it to Anki. */
   onAddLine?: (line: TranscriptLine) => Promise<void>;
+  /** Shown under the header, e.g. a podcast's generation progress. */
+  banner?: ReactNode;
 }
 
 type PlayerMode = 'continuous' | 'shadow';
@@ -75,6 +106,7 @@ export default function ListenAlong({
   onWordClick,
   onExit,
   onAddLine,
+  banner,
 }: ListenAlongProps) {
   const activeLang = useActiveLanguage();
   // Tokenize by the LESSON's language, same rule as MarkdownReader.
@@ -91,6 +123,17 @@ export default function ListenAlong({
   const [mode, setMode] = useState<PlayerMode>('continuous');
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentMs, setCurrentMs] = useState(0);
+  // A podcast that gains paragraphs reloads its audio under a new URL; these
+  // carry the playhead and play state across that reload.
+  const currentMsRef = useRef(0);
+  const isPlayingRef = useRef(false);
+  const loadedUrlRef = useRef(audioUrl);
+  const resumeRef = useRef<{ ms: number; playing: boolean } | null>(null);
+  useLayoutEffect(() => {
+    if (loadedUrlRef.current === audioUrl) return;
+    loadedUrlRef.current = audioUrl;
+    resumeRef.current = { ms: currentMsRef.current, playing: isPlayingRef.current };
+  }, [audioUrl]);
   const [rate, setRate] = useState(1);
   const [activeWord, setActiveWord] = useState<ActiveListenWord | null>(null);
   // Shadow's own pointer: which sentence the drill is on. Continuous derives
@@ -168,7 +211,7 @@ export default function ListenAlong({
   const stepSentence = useCallback(
     (direction: -1 | 1) => {
       if (mode === 'shadow') {
-        const next = Math.min(segments.length - 1, Math.max(0, shadowIdx + direction));
+        const next = stepToLessonLine(segments, shadowIdx, direction, pack.code);
         setShadowIdx(next);
         playSegment(next);
         return;
@@ -179,7 +222,7 @@ export default function ListenAlong({
       const segment = segments[target];
       if (segment) audio.currentTime = segment.startMs / 1000;
     },
-    [mode, playheadIdx, playSegment, segments, shadowIdx],
+    [mode, pack.code, playheadIdx, playSegment, segments, shadowIdx],
   );
 
   const skipSeconds = useCallback((delta: number) => {
@@ -194,15 +237,25 @@ export default function ListenAlong({
       unitPlayer()?.stop();
       if (next === 'shadow') {
         // Start the drill at the sentence the listener is on.
-        setShadowIdx(Math.max(0, playheadIdx));
+        const start = Math.max(0, playheadIdx);
+        setShadowIdx(
+          segments[start] && isNarration(segments[start], pack.code)
+            ? stepToLessonLine(segments, start, 1, pack.code)
+            : start,
+        );
       }
       setMode(next);
     },
-    [mode, playheadIdx, unitPlayer],
+    [mode, pack.code, playheadIdx, segments, unitPlayer],
   );
 
   const handleWordTap = useCallback(
-    (segment: AudioTranscriptSegment, wordIndex: number, text: string) => {
+    (
+      segment: AudioTranscriptSegment,
+      wordIndex: number,
+      text: string,
+      context: AudioTranscriptSegment,
+    ) => {
       // Interacting with a word always pauses — the whole point is to stop and
       // look it up without losing the playhead.
       unitPlayer()?.stop();
@@ -213,10 +266,10 @@ export default function ListenAlong({
       if (scroller) scroller.scrollTo({ top: scroller.scrollTop, behavior: 'auto' });
       setHighlightedPhrase(NO_PHRASE);
       setActiveWord({ segmentIdx: segment.idx, wordIndex });
-      onWordClick(text, segment.text, {
+      onWordClick(text, context.text, {
         sourceUrl: '',
-        startMs: segment.startMs,
-        endMs: segment.endMs,
+        startMs: context.startMs,
+        endMs: context.endMs,
       });
     },
     [onWordClick, unitPlayer],
@@ -234,7 +287,8 @@ export default function ListenAlong({
     (text: string, element: HTMLElement | null) => {
       const words = phraseWords(text);
       const row = element?.closest<HTMLElement>('[data-segment-idx]');
-      const segment = row ? segments[Number(row.dataset.segmentIdx)] : undefined;
+      const rowIndex = row ? Number(row.dataset.segmentIdx) : -1;
+      const segment = rowIndex >= 0 ? contextSegment(segments, rowIndex, pack.code) : undefined;
       if (words.length < 2 || !segment) return;
       window.getSelection()?.removeAllRanges();
       suppressRowClickRef.current = true;
@@ -249,7 +303,7 @@ export default function ListenAlong({
         endMs: segment.endMs,
       });
     },
-    [onWordClick, phraseWords, segments, unitPlayer],
+    [onWordClick, pack.code, phraseWords, segments, unitPlayer],
   );
 
   const handleMouseUp = useCallback(() => {
@@ -307,6 +361,7 @@ export default function ListenAlong({
           <BookOpenText className="h-5 w-5" />
         </button>
       </header>
+      {banner}
 
       {/* Segments */}
       <div ref={scrollContainerRef} className="flex-1 overflow-auto">
@@ -320,7 +375,11 @@ export default function ListenAlong({
         >
           {segments.map((segment, idx) => {
             const isActive = idx === activeIdx;
-            const parts = splitWords(segment.text, pack);
+            const narration = isNarration(segment, pack.code);
+            const parts = narration
+              ? narrationParts(segment.text, pack)
+              : splitWords(segment.text, pack);
+            const context = narration ? contextSegment(segments, idx, pack.code) : segment;
             const phraseSet =
               effectivePhrase.length > 0
                 ? computePhraseHighlightSet(
@@ -340,6 +399,7 @@ export default function ListenAlong({
                   data-testid="listen-segment"
                   data-segment-idx={idx}
                   data-active-segment={isActive || undefined}
+                  data-narration={narration || undefined}
                   onClick={(event) => {
                     if (suppressRowClickRef.current) {
                       suppressRowClickRef.current = false;
@@ -355,7 +415,11 @@ export default function ListenAlong({
                       handleSeek(segment.startMs);
                     }
                   }}
-                  className={`my-1 flex-1 cursor-pointer rounded-xl px-3 py-2 text-lg leading-[1.9] transition-colors sm:text-xl ${
+                  className={`my-1 flex-1 cursor-pointer rounded-xl px-3 py-2 transition-colors ${
+                    narration
+                      ? 'text-base leading-relaxed text-muted-foreground sm:text-lg'
+                      : 'text-lg leading-[1.9] sm:text-xl'
+                  } ${
                     isActive
                       ? 'bg-[color-mix(in_srgb,var(--clay)_12%,transparent)]'
                       : 'hover:bg-accent/50'
@@ -374,12 +438,12 @@ export default function ListenAlong({
                           effectiveActiveWord.wordIndex === partIndex
                         }
                         isPhraseHighlighted={phraseSet.has(wordIndex)}
-                        onActivate={(text) => handleWordTap(segment, partIndex, text)}
+                        onActivate={(text) => handleWordTap(segment, partIndex, text, context)}
                       />
                     );
                   })}
                 </p>
-                {onAddLine && (
+                {onAddLine && !narration && (
                   <div className="my-1 pt-2">
                     <AddLineToAnki
                       line={{
@@ -518,9 +582,30 @@ export default function ListenAlong({
         ref={audioRef}
         src={audioUrl}
         preload="metadata"
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-        onTimeUpdate={(event) => setCurrentMs(Math.round(event.currentTarget.currentTime * 1000))}
+        onPlay={() => {
+          isPlayingRef.current = true;
+          setIsPlaying(true);
+        }}
+        onPause={() => {
+          isPlayingRef.current = false;
+          setIsPlaying(false);
+        }}
+        onLoadedMetadata={(event) => {
+          const audio = event.currentTarget;
+          // Loading a new source resets the rate to the default.
+          audio.preservesPitch = true;
+          audio.playbackRate = rate;
+          const resume = resumeRef.current;
+          if (!resume) return;
+          resumeRef.current = null;
+          audio.currentTime = resume.ms / 1000;
+          if (resume.playing) void audio.play().catch(() => setIsPlaying(false));
+        }}
+        onTimeUpdate={(event) => {
+          const ms = Math.round(event.currentTarget.currentTime * 1000);
+          currentMsRef.current = ms;
+          setCurrentMs(ms);
+        }}
         data-testid="listen-audio"
       />
     </div>

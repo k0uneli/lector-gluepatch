@@ -40,3 +40,36 @@ export function nextPlaybackRate(current: number): number {
   const index = PLAYBACK_RATES.findIndex((rate) => rate === current);
   return PLAYBACK_RATES[(index + 1) % PLAYBACK_RATES.length] ?? 1;
 }
+
+/** A podcast narration row: its text is in another language than the lesson. */
+export function isNarration(segment: AudioTranscriptSegment, lessonLanguage: string): boolean {
+  return !!segment.lang && segment.lang !== lessonLanguage;
+}
+
+/**
+ * The lesson-language line a word tap saves as its sentence and clip. For a
+ * narration row that is the nearest lesson-language line before it.
+ */
+export function contextSegment(
+  segments: AudioTranscriptSegment[],
+  index: number,
+  lessonLanguage: string,
+): AudioTranscriptSegment {
+  for (let i = index; i >= 0; i--) {
+    if (!isNarration(segments[i], lessonLanguage)) return segments[i];
+  }
+  return segments[index];
+}
+
+/** The next lesson-language line from `index` in `direction`, or `index` when none is left. */
+export function stepToLessonLine(
+  segments: AudioTranscriptSegment[],
+  index: number,
+  direction: -1 | 1,
+  lessonLanguage: string,
+): number {
+  for (let i = index + direction; i >= 0 && i < segments.length; i += direction) {
+    if (!isNarration(segments[i], lessonLanguage)) return i;
+  }
+  return index;
+}

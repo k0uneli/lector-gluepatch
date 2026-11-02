@@ -68,6 +68,26 @@ On billed cloud plans, two limits apply. Self-host ignores them.
 
 Both are tunable through `LECTOR_PLAN_LIMITS`.
 
+## Podcast episodes
+
+The Podcast tab makes a slow-reading episode from a chapter. A worker writes the notes for each paragraph with the AI provider, speaks them with a voice engine, and adds them to an audio lesson. Enable the worker with `PODCAST_WORKER=1`. The worker needs `ffmpeg`, which the image contains. `PODCAST_INTERVAL_MS` sets how often it looks for work. The default is 2000.
+
+`ANTHROPIC_PODCAST_MODEL` sets the model for the script. The default is `ANTHROPIC_MODEL`. One chapter of about 30 paragraphs costs about $0.50 on Claude Sonnet.
+
+Choose one or more voice engines:
+
+| Engine | Variables | Notes |
+|--------|-----------|-------|
+| Google Cloud | `GOOGLE_CLOUD_API_KEY` | The read-aloud key. Episodes use a Chirp 3 HD voice when the language has one, and the standard voice when it does not. The first million characters each month are free. After that, one chapter costs about $2 to $4. |
+| Local server | `PODCAST_TTS_URL`, `PODCAST_TTS_VOICE`, `PODCAST_TTS_ENGLISH_VOICE`, optional `PODCAST_TTS_MODEL` and `PODCAST_TTS_API_KEY` | Any OpenAI-compatible `POST /v1/audio/speech` server. Self-host only. |
+| ElevenLabs | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, optional `ELEVENLABS_MODEL` | Self-host only. The default model is `eleven_multilingual_v2`. A `flash` or `turbo` model costs half as much. One chapter costs about $5 to $10 at API prices. |
+
+For a local server on a GPU, [chatterbox-tts-api](https://chatterboxtts.com) serves Chatterbox Multilingual. It fits a 12 GB card. It takes the language from the voice, not from the request. Upload one voice sample for the target language and one for English, then put their names in `PODCAST_TTS_VOICE` and `PODCAST_TTS_ENGLISH_VOICE`. The same sample can serve both. It speaks Russian and Greek. Its Chinese voice is turned off at the time of writing. Run the server on the GPU host, not inside the Lector container.
+
+Each episode is an audio lesson in a "<book> · Podcast" collection. The audio counts toward `maxAudioStorageBytes`. Google characters count toward `ttsCharsPerMonth`, and each paragraph counts as one AI request.
+
+On a self-hosted install, each book also has a private RSS feed at `/api/podcasts/feed/<token>/<show>`. The phone must reach the API origin. Anyone with the URL can listen, so keep it private. Reset the feed in the Podcast tab to stop the old URLs.
+
 ## Voice cloze
 
 Voice mode in cloze practice turns speech into text while the learner speaks. It is for self-hosted installs. Cloud does not serve it.

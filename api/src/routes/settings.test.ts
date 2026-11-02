@@ -20,6 +20,10 @@ const TEST_KEYS = [
   'sttProtocol',
   'sttUrl',
   'sttApiKey',
+  'podcastEngine',
+  'podcastGoogleVoice',
+  'podcastSlowTempo',
+  'podcastExplainBelow',
 ];
 
 function clear() {
@@ -152,6 +156,19 @@ describe('settings write validation (#233)', () => {
     expect((await putKey('sttProtocol', 'grpc')).status).toBe(400);
     expect((await putKey('sttProtocol', 1)).status).toBe(400);
     expect(storedValue('sttProtocol')).toBe(JSON.stringify('http'));
+  });
+
+  test('podcast preferences accept only their values', async () => {
+    expect((await putKey('podcastEngine', 'elevenlabs')).status).toBe(200);
+    expect((await putKey('podcastEngine', 'piper')).status).toBe(400);
+    expect((await putKey('podcastExplainBelow', 'level1')).status).toBe(200);
+    expect((await putKey('podcastExplainBelow', 'level2')).status).toBe(400);
+    expect((await putKey('podcastSlowTempo', 0.8)).status).toBe(200);
+    expect((await putKey('podcastSlowTempo', 0.4)).status).toBe(400);
+    expect((await putKey('podcastSlowTempo', '0.8')).status).toBe(400);
+    expect((await putKey('podcastGoogleVoice', 'Charon')).status).toBe(200);
+    expect((await putKey('podcastGoogleVoice', 'x'.repeat(40))).status).toBe(400);
+    expect(storedValue('podcastSlowTempo')).toBe(JSON.stringify(0.8));
   });
 
   test('the speech recognition endpoint is a URL key and its key is masked', async () => {

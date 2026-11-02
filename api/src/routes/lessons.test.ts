@@ -196,8 +196,8 @@ describe('audio lesson routes (#185)', () => {
     const response = await app.request('/lesson-1/segments?language=af');
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual([
-      { idx: 0, startMs: 0, endMs: 2000, text: 'Goeie môre.' },
-      { idx: 1, startMs: 2000, endMs: 4000, text: 'Welkom terug.' },
+      { idx: 0, startMs: 0, endMs: 2000, text: 'Goeie môre.', lang: null },
+      { idx: 1, startMs: 2000, endMs: 4000, text: 'Welkom terug.', lang: null },
     ]);
 
     const missing = await app.request('/missing/segments?language=af');

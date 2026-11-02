@@ -14,8 +14,15 @@ import { lookupReadings } from '../lib/dictionary-db';
 import { analyserReadings } from '../lib/ja-morphology';
 import { resolveLanguage } from '../lib/active-language';
 import { getCurrentUserId } from '../lib/user';
-import { audioContentType, deleteAudioFile, isVideoFile, videoContentType } from '../lib/audio-files';
+import {
+  audioContentType,
+  deleteAudioFile,
+  isVideoFile,
+  serveRangedFile,
+  videoContentType,
+} from '../lib/audio-files';
 import { cutAudioClip, MAX_CLIP_MS } from '../lib/audio-clip';
+import { forgetPodcastLessons } from '../lib/podcast/store';
 import { entitlements, planLimitResponse } from '../lib/entitlements';
 import { aggregateGrowthCheck, growingRowCheck, lessonTextBytes } from '../lib/storage-limits';
 import {
@@ -59,9 +66,9 @@ app.get('/:id/segments', (c) => {
   }
   const segments = db
     .prepare(
-      'SELECT idx, startMs, endMs, text FROM transcript_segments WHERE userId = ? AND lessonId = ? ORDER BY idx ASC',
+      'SELECT idx, startMs, endMs, text, lang FROM transcript_segments WHERE userId = ? AND lessonId = ? ORDER BY idx ASC',
     )
-    .all(userId, id) as Pick<TranscriptSegmentRow, 'idx' | 'startMs' | 'endMs' | 'text'>[];
+    .all(userId, id) as Pick<TranscriptSegmentRow, 'idx' | 'startMs' | 'endMs' | 'text' | 'lang'>[];
   return c.json(segments);
 });
 
@@ -146,42 +153,7 @@ app.get('/:id/audio', async (c) => {
   if (!(await file.exists())) {
     return c.json({ error: 'Audio file is missing' }, 404);
   }
-  const size = file.size;
-  const contentType = audioContentType(lesson.audioPath);
-
-  const range = c.req.header('range');
-  const match = range?.match(/^bytes=(\d*)-(\d*)$/);
-  if (match && (match[1] !== '' || match[2] !== '')) {
-    // Suffix form (bytes=-N) means "the last N bytes".
-    const start =
-      match[1] === '' ? Math.max(0, size - parseInt(match[2], 10)) : parseInt(match[1], 10);
-    let end = match[1] !== '' && match[2] !== '' ? parseInt(match[2], 10) : size - 1;
-    end = Math.min(end, size - 1);
-    if (start > end || start >= size) {
-      return new Response(null, {
-        status: 416,
-        headers: { 'Content-Range': `bytes */${size}` },
-      });
-    }
-    return new Response(file.slice(start, end + 1), {
-      status: 206,
-      headers: {
-        'Content-Type': contentType,
-        'Content-Range': `bytes ${start}-${end}/${size}`,
-        'Content-Length': String(end - start + 1),
-        'Accept-Ranges': 'bytes',
-      },
-    });
-  }
-
-  return new Response(file, {
-    status: 200,
-    headers: {
-      'Content-Type': contentType,
-      'Content-Length': String(size),
-      'Accept-Ranges': 'bytes',
-    },
-  });
+  return serveRangedFile(file, audioContentType(lesson.audioPath), c.req.header('range'));
 });
 
 // GET /api/lessons/:id/video
@@ -201,41 +173,7 @@ app.get('/:id/video', async (c) => {
   if (!(await file.exists())) {
     return c.json({ error: 'Video file is missing' }, 404);
   }
-  const size = file.size;
-  const contentType = videoContentType(lesson.audioPath);
-
-  const range = c.req.header('range');
-  const match = range?.match(/^bytes=(\d*)-(\d*)$/);
-  if (match && (match[1] !== '' || match[2] !== '')) {
-    const start =
-      match[1] === '' ? Math.max(0, size - parseInt(match[2], 10)) : parseInt(match[1], 10);
-    let end = match[1] !== '' && match[2] !== '' ? parseInt(match[2], 10) : size - 1;
-    end = Math.min(end, size - 1);
-    if (start > end || start >= size) {
-      return new Response(null, {
-        status: 416,
-        headers: { 'Content-Range': `bytes */${size}` },
-      });
-    }
-    return new Response(file.slice(start, end + 1), {
-      status: 206,
-      headers: {
-        'Content-Type': contentType,
-        'Content-Range': `bytes ${start}-${end}/${size}`,
-        'Content-Length': String(end - start + 1),
-        'Accept-Ranges': 'bytes',
-      },
-    });
-  }
-
-  return new Response(file, {
-    status: 200,
-    headers: {
-      'Content-Type': contentType,
-      'Content-Length': String(size),
-      'Accept-Ranges': 'bytes',
-    },
-  });
+  return serveRangedFile(file, videoContentType(lesson.audioPath), c.req.header('range'));
 });
 
 // GET /api/lessons/:id/clip?startMs=&endMs=
@@ -285,7 +223,8 @@ app.post('/:id/retry-transcription', (c) => {
     .prepare(
       `UPDATE lessons
           SET transcriptionStatus = 'pending', transcriptionError = NULL, transcriptionAttempts = 0
-        WHERE id = ? AND userId = ? AND language = ? AND transcriptionStatus = 'error'`,
+        WHERE id = ? AND userId = ? AND language = ? AND transcriptionStatus = 'error'
+          AND (sourceType IS NULL OR sourceType != 'podcast')`,
     )
     .run(id, userId, lang).changes;
   if (changed === 0) {
@@ -397,6 +336,7 @@ app.delete('/:id', (c) => {
     db.prepare('UPDATE vocab SET bookId = NULL WHERE bookId = ? AND userId = ?').run(id, userId);
     // FK enforcement is off app-wide, so cascade the segments manually.
     db.prepare('DELETE FROM transcript_segments WHERE userId = ? AND lessonId = ?').run(userId, id);
+    forgetPodcastLessons(userId, [id]);
     db.prepare('DELETE FROM lessons WHERE id = ? AND userId = ? AND language = ?').run(
       id,
       userId,

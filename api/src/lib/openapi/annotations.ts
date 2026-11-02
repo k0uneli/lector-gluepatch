@@ -302,6 +302,11 @@ export const schemas: Record<string, JsonSchema> = {
       startMs: { type: 'integer' },
       endMs: { type: 'integer' },
       text: { type: 'string' },
+      lang: {
+        type: ['string', 'null'],
+        description:
+          'Language of the line when it differs from the lesson, e.g. `en` for podcast narration. Null means the lesson language.',
+      },
     },
     required: ['idx', 'startMs', 'endMs', 'text'],
   },
@@ -2432,6 +2437,10 @@ const SETTING_KEYS = [
   'sttUrl',
   'sttModel',
   'sttApiKey',
+  'podcastEngine',
+  'podcastGoogleVoice',
+  'podcastSlowTempo',
+  'podcastExplainBelow',
 ];
 
 const settingsOps: Record<string, OperationDoc> = {
@@ -2961,6 +2970,59 @@ const internalOps: Record<string, OperationDoc> = {
   'POST /api/reading-challenge/today': {
     summary: 'Generate today’s reading challenge',
     tag: 'Practice',
+  },
+
+  'GET /api/podcasts': {
+    summary: 'List the podcast shows and their episodes',
+    tag: 'Practice',
+  },
+  'POST /api/podcasts': { summary: 'Queue a podcast episode', tag: 'Practice' },
+  'POST /api/podcasts/estimate': {
+    summary: 'Estimate the length of a podcast episode',
+    tag: 'Practice',
+  },
+  'POST /api/podcasts/engines/test': {
+    summary: 'Play a sample of a podcast voice engine',
+    tag: 'Practice',
+  },
+  'POST /api/podcasts/feed-token': {
+    summary: 'Create or replace the private podcast feed token',
+    tag: 'Practice',
+  },
+  'DELETE /api/podcasts/feed-token': {
+    summary: 'Revoke the private podcast feed token',
+    tag: 'Practice',
+  },
+  'GET /api/podcasts/feed/{token}/{showId}': {
+    summary: 'Read the RSS feed of a podcast show',
+    tag: 'Practice',
+    auth: 'none',
+    pathParams: { token: 'Private feed token.', showId: 'Podcast show identifier.' },
+  },
+  'GET /api/podcasts/feed/{token}/{showId}/{file}': {
+    summary: 'Download the audio of a podcast episode',
+    tag: 'Practice',
+    auth: 'none',
+    pathParams: {
+      token: 'Private feed token.',
+      showId: 'Podcast show identifier.',
+      file: 'Episode identifier followed by `.mp3`.',
+    },
+  },
+  'GET /api/podcasts/{id}': {
+    summary: 'Get a podcast episode',
+    tag: 'Practice',
+    pathParams: { id: 'Episode identifier.' },
+  },
+  'POST /api/podcasts/{id}/retry': {
+    summary: 'Retry a failed podcast episode',
+    tag: 'Practice',
+    pathParams: { id: 'Episode identifier.' },
+  },
+  'DELETE /api/podcasts/{id}': {
+    summary: 'Delete a podcast episode',
+    tag: 'Practice',
+    pathParams: { id: 'Episode identifier.' },
   },
 
   'POST /api/tokens': { summary: 'Create a personal access token', tag: 'Settings' },

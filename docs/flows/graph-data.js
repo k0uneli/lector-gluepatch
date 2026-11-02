@@ -348,6 +348,22 @@
     summary: "Podcast playback after ASR. GET segments and Range audio. Not the YouTube player.",
     steps: ["file:listen-along", "route:lessons-segments", "route:lessons-audio", "table:transcript_segments"],
   });
+  N("flow:podcast", "flow", "Podcast episode", {
+    domain: "listen",
+    md: "listen.md#podcast-episodes",
+    summary: "A chapter becomes a slow-reading episode. The worker writes each paragraph's notes with the LLM, voices them, and appends them to an audio lesson that plays in listen-along.",
+    steps: [
+      "file:podcast-page",
+      "route:podcasts-create",
+      "table:podcast_episodes",
+      "fn:processNextParagraph",
+      "fn:writeParagraphNotes",
+      "fn:createPodcastVoice",
+      "fn:renderParagraph",
+      "table:transcript_segments",
+      "file:listen-along",
+    ],
+  });
   N("flow:youtube-captions", "flow", "YouTube captions", {
     domain: "listen",
     md: "listen.md#youtube-captions",
@@ -538,6 +554,13 @@
   N("file:vocab-page", "file", "Vocab page", { path: "src/app/vocab/page.tsx", domain: "vocabulary" });
   N("file:known-words-import", "file", "KnownWordsImport", { path: "src/app/settings/components/KnownWordsImport/index.tsx", domain: "vocabulary" });
   N("file:listen-along", "file", "ListenAlong", { path: "src/components/ListenAlong/index.tsx", domain: "listen" });
+  N("file:podcast-page", "file", "Podcast page", { path: "src/app/podcast/page.tsx", domain: "listen" });
+  N("route:podcasts-create", "route", "POST /api/podcasts", { path: "api/src/routes/podcasts.ts" });
+  N("route:podcast-feed", "route", "GET /api/podcasts/feed/:token/:showId", { path: "api/src/routes/podcasts.ts" });
+  N("fn:processNextParagraph", "fn", "processNextParagraph", { path: "api/src/lib/podcast/worker.ts" });
+  N("fn:writeParagraphNotes", "fn", "writeParagraphNotes", { path: "api/src/lib/podcast/script.ts" });
+  N("fn:createPodcastVoice", "fn", "createPodcastVoice", { path: "api/src/lib/podcast/engines.ts" });
+  N("fn:renderParagraph", "fn", "renderParagraph", { path: "api/src/lib/podcast/audio.ts" });
   N("file:youtube-player", "file", "YouTubePlayer", { path: "src/components/YouTubePlayer/index.tsx", domain: "listen" });
   N("file:anki-client", "file", "anki.ts", { path: "src/lib/anki.ts", domain: "anki" });
   N("file:anki-queue", "file", "anki-queue.ts", { path: "src/lib/anki-queue.ts", domain: "anki" });
@@ -828,6 +851,9 @@
   N("table:reading_challenges", "table", "reading_challenges", { path: "api/src/db.ts" });
   N("table:anki_pending", "table", "anki_pending", { path: "api/src/db.ts" });
   N("table:transcript_segments", "table", "transcript_segments", { path: "api/src/db.ts" });
+  N("table:podcast_episodes", "table", "podcast_episodes", { path: "api/src/db.ts" });
+  N("table:podcast_shows", "table", "podcast_shows", { path: "api/src/db.ts" });
+  N("table:podcast_feed_tokens", "table", "podcast_feed_tokens", { path: "api/src/db.ts" });
   N("table:onboarding_progress", "table", "onboarding_progress", { path: "api/src/db.ts" });
   N("table:usage_counters", "table", "usage_counters", { path: "api/src/db.ts" });
   N("table:dict-pack", "table", "dictionary-{lang}.db", { path: "data/dictionary-{lang}.db" });
@@ -916,7 +942,7 @@
   domainFlows("practice", ["flow:practice-word", "flow:dictation", "flow:recall", "flow:reading-challenge", "flow:voice-cloze", "flow:cloze-drills", "flow:blacklist"]);
   domainFlows("journal", ["flow:journal-submit", "flow:journal-draft"]);
   domainFlows("tutor", ["flow:tutor-chat", "flow:cloze-explain"]);
-  domainFlows("listen", ["flow:speak-word", "flow:listen-along", "flow:youtube-captions"]);
+  domainFlows("listen", ["flow:speak-word", "flow:listen-along", "flow:podcast", "flow:youtube-captions"]);
   domainFlows("anki", ["flow:anki-push", "flow:anki-sync"]);
   domainFlows("onboarding", ["flow:language-setup", "flow:add-language"]);
   domainFlows("stats", ["flow:daily-stats", "flow:fluency-radar"]);
@@ -1280,6 +1306,23 @@
   edge("file:listen-along", "route:lessons-audio", "http");
   edge("route:lessons-segments", "table:transcript_segments", "reads");
   edge("file:read-page", "file:listen-along", "opens");
+  edge("flow:podcast", "file:podcast-page", "starts");
+  edge("file:podcast-page", "route:podcasts-create", "http");
+  edge("route:podcasts-create", "table:podcast_shows", "writes");
+  edge("route:podcasts-create", "table:podcast_episodes", "writes");
+  edge("route:podcasts-create", "table:lessons", "writes");
+  edge("route:podcasts-create", "table:collections", "writes");
+  edge("fn:processNextParagraph", "table:podcast_episodes", "reads");
+  edge("fn:processNextParagraph", "table:knownWords", "reads");
+  edge("fn:processNextParagraph", "fn:lookupWord", "calls");
+  edge("fn:processNextParagraph", "fn:writeParagraphNotes", "calls");
+  edge("fn:writeParagraphNotes", "fn:getProvider", "calls");
+  edge("fn:processNextParagraph", "fn:createPodcastVoice", "calls");
+  edge("fn:processNextParagraph", "fn:renderParagraph", "calls");
+  edge("fn:processNextParagraph", "table:transcript_segments", "writes");
+  edge("fn:processNextParagraph", "table:lessons", "writes");
+  edge("route:podcast-feed", "table:podcast_feed_tokens", "reads");
+  edge("route:podcast-feed", "table:podcast_shows", "reads");
   edge("flow:youtube-captions", "file:youtube-player", "starts");
   edge("file:markdown-reader", "file:youtube-player", "uses");
   edge("file:transcript-reader", "fn:read-handleWordClick", "calls");
