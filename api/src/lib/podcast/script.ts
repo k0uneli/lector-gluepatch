@@ -273,6 +273,8 @@ export const EPISODE_OUTRO = 'That is the end of this episode. Thank you for lis
  */
 export function assembleParagraph(opts: {
   number: number;
+  /** A later chunk of the same paragraph. */
+  continued?: boolean;
   sentences: readonly string[];
   notes: readonly ScriptNote[][];
   translation?: string | null;
@@ -281,7 +283,10 @@ export function assembleParagraph(opts: {
 }): ScriptLine[] {
   const lines: ScriptLine[] = [];
   if (opts.intro) lines.push({ kind: 'intro', text: opts.intro });
-  lines.push({ kind: 'heading', text: `Paragraph ${opts.number}.` });
+  lines.push({
+    kind: 'heading',
+    text: opts.continued ? `Paragraph ${opts.number}, continued.` : `Paragraph ${opts.number}.`,
+  });
   opts.sentences.forEach((sentence, i) => {
     lines.push({ kind: 'slow', text: sentence });
     for (const note of opts.notes[i] ?? []) lines.push({ kind: 'note', text: note.say });

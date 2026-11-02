@@ -187,6 +187,25 @@ describe('processNextParagraph', () => {
     expect(await processNextParagraph(deps)).toEqual({ state: 'idle' });
   });
 
+  test('reads a long paragraph in chunks, each with its re-read and translation', async () => {
+    const queued = queueEpisode(['Кот спит. Кот ест. Кот видит дом. Дом большой.']);
+    await processNextParagraph(deps);
+    const texts = segments(queued.lessonId).map((s) => s.text);
+    const at = (text: string) => texts.indexOf(text);
+    expect(requests.map((r) => r.sentences.map((s) => s.text))).toEqual([
+      ['Кот спит.', 'Кот ест.', 'Кот видит дом.'],
+      ['Дом большой.'],
+    ]);
+    expect(requests[1].previous).toBe('Кот спит. Кот ест. Кот видит дом.');
+    expect(requests[1].sentences[0].words.map((w) => w.word)).toEqual(['большой']);
+    expect(at('Paragraph 1.')).toBeLessThan(at('Now the whole paragraph.'));
+    expect(at('Now the whole paragraph.')).toBeLessThan(at('In English.'));
+    expect(at('In English.')).toBeLessThan(at('Paragraph 1, continued.'));
+    expect(texts.filter((t) => t === 'Paragraph 1, continued.')).toHaveLength(1);
+    expect(texts.filter((t) => t.startsWith('Welcome.'))).toHaveLength(1);
+    expect(texts.at(-1)).toBe('That is the end of this episode. Thank you for listening.');
+  });
+
   test('cuts off audio a crashed step left behind', async () => {
     const queued = queueEpisode();
     await processNextParagraph(deps);

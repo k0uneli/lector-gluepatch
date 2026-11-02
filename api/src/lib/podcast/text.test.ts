@@ -1,7 +1,7 @@
 import '../../test-guard';
 import { describe, expect, test } from 'bun:test';
 import { getLanguageConfig } from '../languages';
-import { narrationRuns, paragraphSentences, podcastParagraphs } from './text';
+import { chunkSentences, narrationRuns, paragraphSentences, podcastParagraphs } from './text';
 
 const ru = getLanguageConfig('ru');
 
@@ -44,6 +44,29 @@ describe('paragraphSentences', () => {
       'Кот видит дом.',
       'Дом большой!',
     ]);
+  });
+});
+
+describe('chunkSentences', () => {
+  test('keeps a short paragraph whole', () => {
+    expect(chunkSentences(['Ένα.', 'Δύο.'])).toEqual([['Ένα.', 'Δύο.']]);
+  });
+
+  test('cuts after three sentences', () => {
+    expect(chunkSentences(['1.', '2.', '3.', '4.', '5.'])).toEqual([
+      ['1.', '2.', '3.'],
+      ['4.', '5.'],
+    ]);
+  });
+
+  test('cuts before a sentence that would pass 500 characters', () => {
+    const long = 'α'.repeat(300);
+    expect(chunkSentences([long, long, 'Τέλος.'])).toEqual([[long], [long, 'Τέλος.']]);
+  });
+
+  test('keeps a single very long sentence as one chunk', () => {
+    const huge = 'β'.repeat(900);
+    expect(chunkSentences([huge])).toEqual([[huge]]);
   });
 });
 

@@ -218,6 +218,12 @@ describe('assembleParagraph', () => {
     ]);
   });
 
+  test('names a later chunk of the paragraph as continued', () => {
+    expect(
+      assembleParagraph({ number: 2, continued: true, sentences: ['Да.'], notes: [[]] })[0],
+    ).toEqual({ kind: 'heading', text: 'Paragraph 2, continued.' });
+  });
+
   test('skips the re-read for a one-sentence paragraph, but not the translation', () => {
     expect(
       assembleParagraph({ number: 1, sentences: ['Да.'], notes: [[]] }).map((l) => l.kind),

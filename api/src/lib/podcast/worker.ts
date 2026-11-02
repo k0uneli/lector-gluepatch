@@ -36,7 +36,7 @@ import {
 } from './script';
 import { readPodcastSettings, type PodcastEngineId, type PodcastSettings } from './settings';
 import { episodeAudioPath } from './store';
-import { paragraphSentences } from './text';
+import { chunkSentences, paragraphSentences } from './text';
 
 /** Attempts per paragraph, including the one being made. */
 const MAX_ATTEMPTS = 3;
@@ -145,36 +145,46 @@ async function scriptParagraph(
     .prepare('SELECT word, state FROM knownWords WHERE userId = ? AND language = ?')
     .all(episode.userId, episode.language) as KnownWord[];
   const finder = deps.finder(knownForPodcast(known, settings.explainBelow), pack);
-  const alreadyExplained = new Set(parseList(episode.explained));
-  const sentences = paragraphSentences(paragraphs[index], pack);
-  const plans = planSentences(sentences, finder, alreadyExplained, (word) =>
-    deps.describe(episode.userId, word, episode.language),
-  );
-  const { notes, translation } = await deps.writeNotes(episode.userId, {
-    languageName: pack.name,
-    sentences: plans,
-    previous: index > 0 ? paragraphs[index - 1] : null,
-  });
-  const lines = assembleParagraph({
-    number: episode.paraFrom + index,
-    sentences,
-    notes,
-    translation,
-    intro:
-      index === 0
-        ? episodeIntro({
-            pack,
-            sourceTitle: episode.sourceTitle,
-            bookTitle: episode.bookTitle,
-            paraFrom: episode.paraFrom,
-            paraTo: episode.paraTo,
-            wholeChapter: episode.title === episode.sourceTitle,
-          })
-        : undefined,
-    outro: index === paragraphs.length - 1 ? EPISODE_OUTRO : undefined,
-  });
-  const explained = [...alreadyExplained, ...plans.flatMap((p) => p.words.map((w) => w.word))];
-  return { lines, explained };
+  const explained = new Set(parseList(episode.explained));
+  const chunks = chunkSentences(paragraphSentences(paragraphs[index], pack));
+  const lines: ScriptLine[] = [];
+  let previous = index > 0 ? paragraphs[index - 1] : null;
+  for (let c = 0; c < chunks.length; c++) {
+    const sentences = chunks[c];
+    const plans = planSentences(sentences, finder, explained, (word) =>
+      deps.describe(episode.userId, word, episode.language),
+    );
+    for (const plan of plans) for (const w of plan.words) explained.add(w.word);
+    const { notes, translation } = await deps.writeNotes(episode.userId, {
+      languageName: pack.name,
+      sentences: plans,
+      previous,
+    });
+    previous = sentences.join(' ');
+    lines.push(
+      ...assembleParagraph({
+        number: episode.paraFrom + index,
+        continued: c > 0,
+        sentences,
+        notes,
+        translation,
+        intro:
+          index === 0 && c === 0
+            ? episodeIntro({
+                pack,
+                sourceTitle: episode.sourceTitle,
+                bookTitle: episode.bookTitle,
+                paraFrom: episode.paraFrom,
+                paraTo: episode.paraTo,
+                wholeChapter: episode.title === episode.sourceTitle,
+              })
+            : undefined,
+        outro:
+          index === paragraphs.length - 1 && c === chunks.length - 1 ? EPISODE_OUTRO : undefined,
+      }),
+    );
+  }
+  return { lines, explained: [...explained] };
 }
 
 /** Write the paragraph's audio, transcript and progress in one step. */

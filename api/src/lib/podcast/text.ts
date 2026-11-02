@@ -45,6 +45,35 @@ export function paragraphSentences(paragraph: string, pack: LanguageConfig): str
     .filter((s) => s && isSpeakable(s));
 }
 
+/** A long paragraph is read in chunks of at most this many sentences or characters. */
+const CHUNK_MAX_SENTENCES = 3;
+const CHUNK_MAX_CHARS = 500;
+
+/**
+ * Group a paragraph's sentences into chunks. Each chunk gets its own
+ * normal-speed reading and translation, so a long paragraph does not keep the
+ * listener waiting for them.
+ */
+export function chunkSentences(sentences: readonly string[]): string[][] {
+  const chunks: string[][] = [];
+  let current: string[] = [];
+  let length = 0;
+  for (const sentence of sentences) {
+    const full =
+      current.length >= CHUNK_MAX_SENTENCES ||
+      (current.length > 0 && length + sentence.length > CHUNK_MAX_CHARS);
+    if (full) {
+      chunks.push(current);
+      current = [];
+      length = 0;
+    }
+    current.push(sentence);
+    length += sentence.length;
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
+
 export type VoiceKind = 'en' | 'target';
 
 export interface VoiceRun {
