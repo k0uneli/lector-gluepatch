@@ -357,7 +357,7 @@
       "route:podcasts-create",
       "table:podcast_episodes",
       "fn:processNextParagraph",
-      "fn:writeParagraphNotes",
+      "fn:writeParagraphScript",
       "fn:createPodcastVoice",
       "fn:renderParagraph",
       "table:transcript_segments",
@@ -558,7 +558,7 @@
   N("route:podcasts-create", "route", "POST /api/podcasts", { path: "api/src/routes/podcasts.ts" });
   N("route:podcast-feed", "route", "GET /api/podcasts/feed/:token/:showId", { path: "api/src/routes/podcasts.ts" });
   N("fn:processNextParagraph", "fn", "processNextParagraph", { path: "api/src/lib/podcast/worker.ts" });
-  N("fn:writeParagraphNotes", "fn", "writeParagraphNotes", { path: "api/src/lib/podcast/script.ts" });
+  N("fn:writeParagraphScript", "fn", "writeParagraphScript", { path: "api/src/lib/podcast/script.ts" });
   N("fn:createPodcastVoice", "fn", "createPodcastVoice", { path: "api/src/lib/podcast/engines.ts" });
   N("fn:renderParagraph", "fn", "renderParagraph", { path: "api/src/lib/podcast/audio.ts" });
   N("file:youtube-player", "file", "YouTubePlayer", { path: "src/components/YouTubePlayer/index.tsx", domain: "listen" });
@@ -1315,8 +1315,8 @@
   edge("fn:processNextParagraph", "table:podcast_episodes", "reads");
   edge("fn:processNextParagraph", "table:knownWords", "reads");
   edge("fn:processNextParagraph", "fn:lookupWord", "calls");
-  edge("fn:processNextParagraph", "fn:writeParagraphNotes", "calls");
-  edge("fn:writeParagraphNotes", "fn:getProvider", "calls");
+  edge("fn:processNextParagraph", "fn:writeParagraphScript", "calls");
+  edge("fn:writeParagraphScript", "fn:getProvider", "calls");
   edge("fn:processNextParagraph", "fn:createPodcastVoice", "calls");
   edge("fn:processNextParagraph", "fn:renderParagraph", "calls");
   edge("fn:processNextParagraph", "table:transcript_segments", "writes");

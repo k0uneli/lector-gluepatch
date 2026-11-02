@@ -13,6 +13,7 @@ const MAX_WORDS_PER_SENTENCE = 12;
 const MAX_NOTES_PER_SENTENCE = 8;
 const MAX_NOTE_CHARS = 600;
 const MAX_FACT_CHARS = 300;
+const MAX_TRANSLATION_CHARS = 4000;
 
 const STATE_RANK: Record<WordState, number> = {
   new: 0,
@@ -138,18 +139,20 @@ export function buildScriptPrompt(opts: {
   return `You host a slow-reading podcast for an English speaker who is learning ${lang}. The text is read one sentence at a time. After each sentence, you explain it in English.
 
 For each sentence, write short spoken notes in this order:
-1. One note for each word in "Words to explain": what it means in this sentence, and its dictionary form when the sentence uses an inflected form. Use the dictionary facts when they are given, and do not contradict them.
+1. One note for each word in "Words to explain": the word, then its English translation as it is used in this sentence. Give one translation. Add a second only when one English word cannot carry the meaning, as with a compound. You may name the grammatical form briefly, as in: «σπιτιού» means of the house; it is the genitive. Do not give the dictionary form. Use the dictionary facts to choose the meaning, and do not contradict them.
 2. Then at most two notes about grammar, idioms or figures of speech in the sentence that a learner needs explained, such as cases, verb aspect, word order, set phrases or metaphors. Skip this when there is nothing worth saying.
 
 A sentence with no words to explain and nothing notable gets no notes.
 
-Each note is natural spoken English, one to three sentences long. Wrap every ${lang} word or phrase in «guillemets», and never put English inside them. Do not repeat or translate the whole sentence.
+Each word note is short, for example: «σπίτι» means house. A grammar or idiom note is natural spoken English, one to three sentences long. Wrap every ${lang} word or phrase in «guillemets», and never put English inside them. Do not repeat or translate the whole sentence in a note.
+
+Also write "translation": a natural English translation of the whole paragraph, to be read aloud after it. Use no guillemets in the translation.
 ${previous}
 Sentences:
 ${sentences}
 
 Respond with ONLY a JSON object in this exact format (no markdown, no code blocks). "n" is the sentence number. "kind" is "word", "phrase", "grammar" or "idiom".
-{"sentences": [{"n": 1, "notes": [{"kind": "word", "say": "..."}]}]}`;
+{"translation": "...", "sentences": [{"n": 1, "notes": [{"kind": "word", "say": "..."}]}]}`;
 }
 
 export type NoteKind = 'word' | 'phrase' | 'grammar' | 'idiom';
@@ -196,20 +199,40 @@ export function parseScriptNotes(raw: unknown, sentenceCount: number): ScriptNot
   return out.map((notes) => [...notes.filter(isWordNote), ...notes.filter((n) => !isWordNote(n))]);
 }
 
-export async function writeParagraphNotes(
+/** The model's English translation of the paragraph, or null when it gave none. */
+export function parseTranslation(raw: unknown): string | null {
+  const value =
+    raw && typeof raw === 'object' ? (raw as { translation?: unknown }).translation : undefined;
+  if (typeof value !== 'string') return null;
+  const text = value.replace(/[«»]/g, '').replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  if (text.length <= MAX_TRANSLATION_CHARS) return text;
+  const cut = text.slice(0, MAX_TRANSLATION_CHARS);
+  return cut.slice(0, Math.max(cut.lastIndexOf(' '), 0)).trim() || cut;
+}
+
+export interface ParagraphScript {
+  notes: ScriptNote[][];
+  translation: string | null;
+}
+
+export async function writeParagraphScript(
   provider: LLMProvider,
   opts: { languageName: string; sentences: readonly SentencePlan[]; previous: string | null },
-): Promise<ScriptNote[][]> {
+): Promise<ParagraphScript> {
   const raw = await completeJson<unknown>(provider, {
     messages: [{ role: 'user', content: buildScriptPrompt(opts) }],
     maxTokens: 6000,
     task: 'podcast-script',
   });
-  return parseScriptNotes(raw, opts.sentences.length);
+  return {
+    notes: parseScriptNotes(raw, opts.sentences.length),
+    translation: parseTranslation(raw),
+  };
 }
 
 /** `slow` and `read` lines are target-language text; every other kind is English narration. */
-export type LineKind = 'intro' | 'heading' | 'slow' | 'note' | 'read' | 'outro';
+export type LineKind = 'intro' | 'heading' | 'slow' | 'note' | 'read' | 'translation' | 'outro';
 
 export interface ScriptLine {
   kind: LineKind;
@@ -239,7 +262,7 @@ export function episodeIntro(opts: {
 }): string {
   const book = opts.bookTitle ? `, from ${spokenTitle(opts.bookTitle, opts.pack)}` : '';
   const range = opts.wholeChapter ? '' : `, paragraphs ${opts.paraFrom} to ${opts.paraTo}`;
-  return `Welcome. In this episode we read ${spokenTitle(opts.sourceTitle, opts.pack)}${book}${range}. I read each sentence slowly and explain it, and at the end of each paragraph you hear the whole paragraph again.`;
+  return `Welcome. In this episode we read ${spokenTitle(opts.sourceTitle, opts.pack)}${book}${range}. I read each sentence slowly and explain it. At the end of each paragraph you hear the whole paragraph again, then its English translation.`;
 }
 
 export const EPISODE_OUTRO = 'That is the end of this episode. Thank you for listening.';
@@ -252,6 +275,7 @@ export function assembleParagraph(opts: {
   number: number;
   sentences: readonly string[];
   notes: readonly ScriptNote[][];
+  translation?: string | null;
   intro?: string;
   outro?: string;
 }): ScriptLine[] {
@@ -265,6 +289,10 @@ export function assembleParagraph(opts: {
   if (opts.sentences.length > 1) {
     lines.push({ kind: 'heading', text: 'Now the whole paragraph.' });
     for (const sentence of opts.sentences) lines.push({ kind: 'read', text: sentence });
+  }
+  if (opts.translation) {
+    lines.push({ kind: 'heading', text: 'In English.' });
+    lines.push({ kind: 'translation', text: opts.translation });
   }
   if (opts.outro) lines.push({ kind: 'outro', text: opts.outro });
   return lines;

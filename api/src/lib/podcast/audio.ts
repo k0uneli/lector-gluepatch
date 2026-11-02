@@ -21,6 +21,7 @@ const PAUSE_AFTER_MS: Record<LineKind, number> = {
   slow: 1000,
   note: 700,
   read: 350,
+  translation: 700,
   outro: 0,
 };
 const PAUSE_AFTER_PARAGRAPH_MS = 1200;

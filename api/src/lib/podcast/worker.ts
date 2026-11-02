@@ -29,9 +29,9 @@ import {
   knownForPodcast,
   planSentences,
   UnknownWordFinder,
-  writeParagraphNotes,
+  writeParagraphScript,
   type ScriptLine,
-  type ScriptNote,
+  type ParagraphScript,
   type SentencePlan,
 } from './script';
 import { readPodcastSettings, type PodcastEngineId, type PodcastSettings } from './settings';
@@ -51,7 +51,7 @@ export interface NotesRequest {
 
 export interface PodcastWorkerDeps {
   settings(userId: string): PodcastSettings;
-  writeNotes(userId: string, request: NotesRequest): Promise<ScriptNote[][]>;
+  writeNotes(userId: string, request: NotesRequest): Promise<ParagraphScript>;
   voice(
     userId: string,
     engine: PodcastEngineId,
@@ -67,7 +67,7 @@ async function writeNotesWithProvider(userId: string, request: NotesRequest) {
   const verdict = entitlements.reserve(userId, 'llmRequestsPerMonth');
   if (!verdict.allowed) throw new PodcastLimitError('The monthly AI request limit is reached.');
   try {
-    return await writeParagraphNotes(
+    return await writeParagraphScript(
       getProvider(userId, { byok: verdict.reservation.byok }),
       request,
     );
@@ -150,7 +150,7 @@ async function scriptParagraph(
   const plans = planSentences(sentences, finder, alreadyExplained, (word) =>
     deps.describe(episode.userId, word, episode.language),
   );
-  const notes = await deps.writeNotes(episode.userId, {
+  const { notes, translation } = await deps.writeNotes(episode.userId, {
     languageName: pack.name,
     sentences: plans,
     previous: index > 0 ? paragraphs[index - 1] : null,
@@ -159,6 +159,7 @@ async function scriptParagraph(
     number: episode.paraFrom + index,
     sentences,
     notes,
+    translation,
     intro:
       index === 0
         ? episodeIntro({

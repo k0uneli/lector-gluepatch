@@ -9,6 +9,7 @@ import {
   episodeIntro,
   knownForPodcast,
   parseScriptNotes,
+  parseTranslation,
   planSentences,
   UnknownWordFinder,
 } from './script';
@@ -117,6 +118,10 @@ describe('buildScriptPrompt', () => {
     expect(prompt).toContain('2. Дом большой.\n   Words to explain: none');
     expect(prompt).toContain('for context only:\nРаньше.');
     expect(prompt).toContain('«guillemets»');
+    expect(prompt).toContain('Give one translation.');
+    expect(prompt).toContain('Do not give the dictionary form.');
+    expect(prompt).toContain('You may name the grammatical form briefly');
+    expect(prompt).toContain('{"translation": "...", "sentences"');
   });
 });
 
@@ -173,12 +178,28 @@ describe('parseScriptNotes', () => {
   });
 });
 
+describe('parseTranslation', () => {
+  test('keeps the paragraph translation without guillemets', () => {
+    expect(parseTranslation({ translation: '  The «cat»  sees a house. ' })).toBe(
+      'The cat sees a house.',
+    );
+  });
+
+  test('is null when the model gave none', () => {
+    expect(parseTranslation({ sentences: [] })).toBeNull();
+    expect(parseTranslation({ translation: '  ' })).toBeNull();
+    expect(parseTranslation({ translation: 7 })).toBeNull();
+    expect(parseTranslation('text')).toBeNull();
+  });
+});
+
 describe('assembleParagraph', () => {
   test('reads each sentence slowly, adds its notes, then reads the whole paragraph', () => {
     const lines = assembleParagraph({
       number: 4,
       sentences: ['Кот видит дом.', 'Дом большой.'],
       notes: [[{ kind: 'word', say: '«видит» means sees.' }], []],
+      translation: 'The cat sees the house. The house is big.',
       intro: 'Welcome.',
       outro: 'Bye.',
     });
@@ -191,14 +212,21 @@ describe('assembleParagraph', () => {
       { kind: 'heading', text: 'Now the whole paragraph.' },
       { kind: 'read', text: 'Кот видит дом.' },
       { kind: 'read', text: 'Дом большой.' },
+      { kind: 'heading', text: 'In English.' },
+      { kind: 'translation', text: 'The cat sees the house. The house is big.' },
       { kind: 'outro', text: 'Bye.' },
     ]);
   });
 
-  test('skips the re-read for a one-sentence paragraph', () => {
+  test('skips the re-read for a one-sentence paragraph, but not the translation', () => {
     expect(
       assembleParagraph({ number: 1, sentences: ['Да.'], notes: [[]] }).map((l) => l.kind),
     ).toEqual(['heading', 'slow']);
+    expect(
+      assembleParagraph({ number: 1, sentences: ['Да.'], notes: [[]], translation: 'Yes.' }).map(
+        (l) => l.kind,
+      ),
+    ).toEqual(['heading', 'slow', 'heading', 'translation']);
   });
 });
 

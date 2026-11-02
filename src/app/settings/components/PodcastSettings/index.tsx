@@ -19,7 +19,7 @@ import {
 
 /** Mirrors DEFAULT_GOOGLE_PERSONA and DEFAULT_SLOW_TEMPO in api/src/lib/podcast/settings.ts. */
 const DEFAULT_PERSONA = 'Aoede';
-const DEFAULT_TEMPO = 0.85;
+const DEFAULT_TEMPO = 0.75;
 
 const EXPLAIN_OPTIONS: Array<{ value: PodcastExplainBelow; label: string }> = [
   { value: 'level1', label: 'Only new words' },

@@ -5,7 +5,7 @@ import { db, type PodcastEpisodeRow } from '../../db';
 import { getLanguageConfig } from '../languages';
 import { SAMPLE_RATE, type AudioToolkit } from './audio';
 import { PodcastLimitError } from './engines';
-import { UnknownWordFinder, type ScriptNote } from './script';
+import { UnknownWordFinder, type ParagraphScript } from './script';
 import type { PodcastSettings } from './settings';
 import { createEpisode, deleteEpisode } from './store';
 import { processNextParagraph, type NotesRequest, type PodcastWorkerDeps } from './worker';
@@ -51,10 +51,13 @@ const deps: PodcastWorkerDeps = {
   toolkit,
 };
 
-function notesFor(request: NotesRequest): ScriptNote[][] {
-  return request.sentences.map((s) =>
-    s.words.length > 0 ? [{ kind: 'word', say: `«${s.words[0].word}» is explained.` }] : [],
-  );
+function notesFor(request: NotesRequest): ParagraphScript {
+  return {
+    notes: request.sentences.map((s) =>
+      s.words.length > 0 ? [{ kind: 'word', say: `«${s.words[0].word}» is explained.` }] : [],
+    ),
+    translation: request.sentences.length > 1 ? 'The cat sees a house. The house is big.' : null,
+  };
 }
 
 function episode(): PodcastEpisodeRow {
@@ -155,6 +158,8 @@ describe('processNextParagraph', () => {
       ['en', 'Now the whole paragraph.'],
       [null, 'Кот видит дом.'],
       [null, 'Дом большой.'],
+      ['en', 'In English.'],
+      ['en', 'The cat sees a house. The house is big.'],
     ]);
     expect(requests[0].sentences.map((s) => s.words.map((w) => w.word))).toEqual([
       ['кот', 'видит'],

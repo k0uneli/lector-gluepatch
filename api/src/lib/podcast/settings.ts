@@ -14,7 +14,7 @@ export type PodcastEngineId = (typeof PODCAST_ENGINES)[number];
 
 export const DEFAULT_GOOGLE_PERSONA = 'Aoede';
 export const DEFAULT_ELEVEN_MODEL = 'eleven_multilingual_v2';
-export const DEFAULT_SLOW_TEMPO = 0.85;
+export const DEFAULT_SLOW_TEMPO = 0.75;
 
 export interface PodcastSettings {
   engine: PodcastEngineId | null;

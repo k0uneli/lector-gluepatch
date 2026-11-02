@@ -135,7 +135,7 @@ export default function NewEpisode({
         <p className="text-sm text-muted-foreground">
           Choose a chapter. Each sentence is read slowly, then the words you don’t know yet are
           explained in English, with grammar and figures of speech. Each paragraph ends with a
-          normal-speed reading.
+          normal-speed reading and an English translation.
         </p>
       </div>
 
