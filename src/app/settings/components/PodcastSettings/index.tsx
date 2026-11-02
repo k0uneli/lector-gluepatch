@@ -31,7 +31,7 @@ const ENGINE_SETUP: Record<PodcastEngineId, string> = {
   google:
     'Uses GOOGLE_CLOUD_API_KEY, the key read-aloud uses. Chirp 3 HD voices sound the most natural; a language without one falls back to its standard voice.',
   local:
-    'An OpenAI-compatible speech server, for example chatterbox-tts-api on your own GPU. Set PODCAST_TTS_URL, PODCAST_TTS_VOICE (the target-language voice) and PODCAST_TTS_ENGLISH_VOICE on the server.',
+    'An OpenAI-compatible speech server, for example chatterbox-tts-api on your own GPU. Set PODCAST_TTS_URL, PODCAST_TTS_VOICE (the target-language voice; {lang} becomes the book’s language code) and PODCAST_TTS_ENGLISH_VOICE on the server.',
   elevenlabs:
     'Set ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID on the server. ELEVENLABS_MODEL picks the model; the default is eleven_multilingual_v2.',
 };

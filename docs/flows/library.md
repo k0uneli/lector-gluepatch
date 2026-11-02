@@ -144,6 +144,8 @@ flowchart TD
 
 One collection, one lesson per chapter. Caps: 50 MB body, 100 MB uncompressed.
 
+Chapters follow the spine; pages marked `linear="no"` are skipped. When the table of contents (NCX, or the EPUB 3 nav) points to anchors inside a file, the file is cut at the shallowest level of those anchors, and deeper entries stay inside their chapter. A piece that is only a heading joins the next one. A file whose pieces would average under 1,000 characters, such as an indexed glossary, stays whole.
+
 ### Paste and markdown
 
 | Role | Path | Function |

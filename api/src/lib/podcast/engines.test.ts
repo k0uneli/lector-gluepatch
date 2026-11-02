@@ -186,6 +186,25 @@ describe('local voice', () => {
     expect(calls[0].headers.Authorization).toBe('Bearer local-key');
   });
 
+  test('{lang} in a voice name follows the book language', async () => {
+    const { calls, impl } = fakeFetch(() => new Response(audioBytes));
+    const templated = {
+      ...settings,
+      localVoice: 'narrator-{lang}',
+      localEnglishVoice: 'narrator-{lang}',
+    };
+    const cache = memoryCache();
+    const russian = createPodcastVoice('local', 'local', templated, ru, { fetchImpl: impl, cache });
+    const greek = createPodcastVoice('local', 'local', templated, getLanguageConfig('el'), {
+      fetchImpl: impl,
+      cache,
+    });
+    await russian.speak('Привет', 'target');
+    await greek.speak('Γεια', 'target');
+    await greek.speak('Hello', 'en');
+    expect(calls.map((c) => c.body.voice)).toEqual(['narrator-ru', 'narrator-el', 'narrator-en']);
+  });
+
   test('rejects an empty response', async () => {
     const { impl } = fakeFetch(() => new Response(new Uint8Array()));
     const voice = createPodcastVoice('local', 'local', settings, ru, {
