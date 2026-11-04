@@ -191,7 +191,7 @@ describe('local voice', () => {
     const templated = {
       ...settings,
       localVoice: 'narrator-{lang}',
-      localEnglishVoice: 'narrator-{lang}',
+      localEnglishVoice: 'narrator-en-{lang}',
     };
     const cache = memoryCache();
     const russian = createPodcastVoice('local', 'local', templated, ru, { fetchImpl: impl, cache });
@@ -201,8 +201,14 @@ describe('local voice', () => {
     });
     await russian.speak('Привет', 'target');
     await greek.speak('Γεια', 'target');
+    await russian.speak('Hello', 'en');
     await greek.speak('Hello', 'en');
-    expect(calls.map((c) => c.body.voice)).toEqual(['narrator-ru', 'narrator-el', 'narrator-en']);
+    expect(calls.map((c) => c.body.voice)).toEqual([
+      'narrator-ru',
+      'narrator-el',
+      'narrator-en-ru',
+      'narrator-en-el',
+    ]);
   });
 
   test('rejects an empty response', async () => {

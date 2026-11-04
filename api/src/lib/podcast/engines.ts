@@ -152,7 +152,7 @@ export function normalizeTtsBaseUrl(raw: string): string {
     .replace(/\/v1(\/audio\/speech)?$/, '');
 }
 
-/** `{lang}` in a voice name becomes the language code, so one setting covers every book language. */
+/** `{lang}` in either voice name becomes the book's language code, so one setting covers every book. */
 export function localVoiceName(template: string, language: string): string {
   return template.replaceAll('{lang}', language);
 }
@@ -168,7 +168,7 @@ function localVoice(
   const baseUrl = normalizeTtsBaseUrl(settings.localUrl);
   const voiceName = (voice: VoiceKind) =>
     voice === 'en'
-      ? localVoiceName(settings.localEnglishVoice, 'en')
+      ? localVoiceName(settings.localEnglishVoice, pack.code)
       : localVoiceName(settings.localVoice, pack.code);
   return {
     identity: (voice) => `local:${baseUrl}:${settings.localModel}:${voiceName(voice)}`,
