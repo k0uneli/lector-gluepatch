@@ -6,6 +6,7 @@ import {
   assembleParagraph,
   buildScriptPrompt,
   describeEntry,
+  describeSource,
   episodeIntro,
   knownForPodcast,
   parseScriptNotes,
@@ -101,17 +102,34 @@ describe('describeEntry', () => {
   });
 });
 
+describe('describeSource', () => {
+  test('names the chapter, the book and the author', () => {
+    expect(describeSource({ sourceTitle: 'Глава 1', bookTitle: 'Книга', author: 'Автор' })).toBe(
+      '"Глава 1", from "Книга" by Автор',
+    );
+  });
+
+  test('leaves out a book title that repeats the chapter, and a missing author', () => {
+    expect(describeSource({ sourceTitle: 'Эссе', bookTitle: 'Эссе', author: null })).toBe('"Эссе"');
+    expect(describeSource({ sourceTitle: '  ', bookTitle: null, author: 'Автор' })).toBeNull();
+  });
+});
+
 describe('buildScriptPrompt', () => {
   test('lists every sentence with its words and dictionary facts', () => {
     const prompt = buildScriptPrompt({
       languageName: 'Russian',
+      source: '"Глава 1", from "Книга" by Автор',
       previous: 'Раньше.',
       sentences: [
         { text: 'Кот видит дом.', words: [{ word: 'видит', facts: 'to see' }] },
         { text: 'Дом большой.', words: [] },
       ],
     });
-    expect(prompt).toContain('learning Russian');
+    expect(prompt).toContain('learning Russian. The text is "Глава 1", from "Книга" by Автор.');
+    expect(prompt).toContain('explain the whole phrase in one "phrase" note');
+    expect(prompt).toContain('coined term');
+    expect(prompt).toContain('a reference to a person, event, idea or text');
     expect(prompt).toContain(
       '1. Кот видит дом.\n   Words to explain:\n   - видит (dictionary: to see)',
     );
@@ -137,7 +155,13 @@ describe('parseScriptNotes', () => {
               { kind: 'word', say: '  «дом»   means house. ' },
             ],
           },
-          { n: 2, notes: [{ kind: 'metaphor', say: 'A figure of speech.' }] },
+          {
+            n: 2,
+            notes: [
+              { kind: 'metaphor', say: 'A figure of speech.' },
+              { kind: 'reference', say: 'A coined term.' },
+            ],
+          },
         ],
       },
       2,
@@ -147,7 +171,10 @@ describe('parseScriptNotes', () => {
         { kind: 'word', say: '«дом» means house.' },
         { kind: 'grammar', say: 'Accusative case.' },
       ],
-      [{ kind: 'grammar', say: 'A figure of speech.' }],
+      [
+        { kind: 'grammar', say: 'A figure of speech.' },
+        { kind: 'reference', say: 'A coined term.' },
+      ],
     ]);
   });
 

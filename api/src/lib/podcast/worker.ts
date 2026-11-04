@@ -23,6 +23,7 @@ import { createPodcastVoice, PodcastLimitError, type PodcastVoice } from './engi
 import {
   assembleParagraph,
   describeEntry,
+  describeSource,
   EPISODE_OUTRO,
   episodeIntro,
   isTargetLine,
@@ -32,7 +33,7 @@ import {
   writeParagraphScript,
   type ScriptLine,
   type ParagraphScript,
-  type SentencePlan,
+  type ScriptRequest,
 } from './script';
 import { readPodcastSettings, type PodcastEngineId, type PodcastSettings } from './settings';
 import { episodeAudioPath } from './store';
@@ -43,11 +44,7 @@ const MAX_ATTEMPTS = 3;
 /** Wait after a failed attempt before the episode is tried again. */
 const RETRY_DELAY_MS = 30_000;
 
-export interface NotesRequest {
-  languageName: string;
-  sentences: readonly SentencePlan[];
-  previous: string | null;
-}
+export type NotesRequest = ScriptRequest;
 
 export interface PodcastWorkerDeps {
   settings(userId: string): PodcastSettings;
@@ -132,6 +129,17 @@ function markFailed(episode: PodcastEpisodeRow, message: string): void {
   })();
 }
 
+function showAuthor(episode: PodcastEpisodeRow): string | null {
+  const row = db
+    .prepare(
+      `SELECT c.author FROM podcast_shows s
+         JOIN collections c ON c.id = s.collectionId AND c.userId = s.userId
+        WHERE s.userId = ? AND s.id = ? AND s.sourceKey NOT LIKE 'standalone:%'`,
+    )
+    .get(episode.userId, episode.showId) as { author: string | null } | null;
+  return row?.author?.trim() || null;
+}
+
 /** The spoken lines of the paragraph at `index` (0-based within the episode). */
 async function scriptParagraph(
   episode: PodcastEpisodeRow,
@@ -147,6 +155,11 @@ async function scriptParagraph(
   const finder = deps.finder(knownForPodcast(known, settings.explainBelow), pack);
   const explained = new Set(parseList(episode.explained));
   const chunks = chunkSentences(paragraphSentences(paragraphs[index], pack));
+  const source = describeSource({
+    sourceTitle: episode.sourceTitle,
+    bookTitle: episode.bookTitle,
+    author: showAuthor(episode),
+  });
   const lines: ScriptLine[] = [];
   let previous = index > 0 ? paragraphs[index - 1] : null;
   for (let c = 0; c < chunks.length; c++) {
@@ -157,6 +170,7 @@ async function scriptParagraph(
     for (const plan of plans) for (const w of plan.words) explained.add(w.word);
     const { notes, translation } = await deps.writeNotes(episode.userId, {
       languageName: pack.name,
+      source,
       sentences: plans,
       previous,
     });

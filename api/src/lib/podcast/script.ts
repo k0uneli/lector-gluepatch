@@ -116,11 +116,29 @@ export function planSentences(
   });
 }
 
-export function buildScriptPrompt(opts: {
+export interface ScriptRequest {
   languageName: string;
+  /** Where the text comes from, as in: "Chapter 1", from "Book" by Author. */
+  source?: string | null;
   sentences: readonly SentencePlan[];
   previous: string | null;
-}): string {
+}
+
+/** The source line for the prompt, or null when there is nothing to name. */
+export function describeSource(opts: {
+  sourceTitle: string;
+  bookTitle: string | null;
+  author: string | null;
+}): string | null {
+  const title = opts.sourceTitle.trim();
+  if (!title) return null;
+  const book =
+    opts.bookTitle && opts.bookTitle !== opts.sourceTitle ? `, from "${opts.bookTitle}"` : '';
+  const author = opts.author ? ` by ${opts.author}` : '';
+  return `"${title}"${book}${author}`;
+}
+
+export function buildScriptPrompt(opts: ScriptRequest): string {
   const lang = opts.languageName;
   const sentences = opts.sentences
     .map((s, i) => {
@@ -136,33 +154,39 @@ export function buildScriptPrompt(opts: {
   const previous = opts.previous
     ? `\nThe paragraph before this one, for context only:\n${opts.previous}\n`
     : '';
-  return `You host a slow-reading podcast for an English speaker who is learning ${lang}. The text is read one sentence at a time. After each sentence, you explain it in English.
+  const source = opts.source ? ` The text is ${opts.source}.` : '';
+  return `You host a slow-reading podcast for an English speaker who is learning ${lang}.${source} The text is read one sentence at a time. After each sentence, you explain it in English.
 
 For each sentence, write short spoken notes in this order:
 1. One note for each word in "Words to explain": the word, then its English translation as it is used in this sentence. Give one translation. Add a second only when one English word cannot carry the meaning, as with a compound. You may name the grammatical form briefly, as in: «σπιτιού» means of the house; it is the genitive. Do not give the dictionary form. Use the dictionary facts to choose the meaning, and do not contradict them.
-2. Then at most two notes about grammar, idioms or figures of speech in the sentence that a learner needs explained, such as cases, verb aspect, word order, set phrases or metaphors. Skip this when there is nothing worth saying.
+   When words to explain belong to a set phrase or a term, explain the whole phrase in one "phrase" note instead.
+2. Then at most two notes on what a learner would still miss with every word translated. Put meaning first:
+   - a set phrase, idiom or coined term whose sense is more than its words: say what it means here, and who coined it or where it comes from when that matters.
+   - a reference to a person, event, idea or text that a native reader would catch: say what it is and why it matters here.
+   - a figure of speech, or grammar a learner needs, such as case, verb aspect or word order.
+   Skip this when there is nothing worth saying. Do not lecture: one to three sentences per note.
 
 A sentence with no words to explain and nothing notable gets no notes.
 
-Each word note is short, for example: «σπίτι» means house. A grammar or idiom note is natural spoken English, one to three sentences long. Wrap every ${lang} word or phrase in «guillemets», and never put English inside them. Do not repeat or translate the whole sentence in a note.
+Each word note is short, for example: «σπίτι» means house. Any other note is natural spoken English. Wrap every ${lang} word or phrase in «guillemets», and never put English inside them. Do not repeat or translate the whole sentence in a note.
 
 Also write "translation": a natural English translation of the whole paragraph, to be read aloud after it. Use no guillemets in the translation.
 ${previous}
 Sentences:
 ${sentences}
 
-Respond with ONLY a JSON object in this exact format (no markdown, no code blocks). "n" is the sentence number. "kind" is "word", "phrase", "grammar" or "idiom".
+Respond with ONLY a JSON object in this exact format (no markdown, no code blocks). "n" is the sentence number. "kind" is "word", "phrase", "grammar", "idiom" or "reference".
 {"translation": "...", "sentences": [{"n": 1, "notes": [{"kind": "word", "say": "..."}]}]}`;
 }
 
-export type NoteKind = 'word' | 'phrase' | 'grammar' | 'idiom';
+export type NoteKind = 'word' | 'phrase' | 'grammar' | 'idiom' | 'reference';
 
 export interface ScriptNote {
   kind: NoteKind;
   say: string;
 }
 
-const NOTE_KINDS = new Set<string>(['word', 'phrase', 'grammar', 'idiom']);
+const NOTE_KINDS = new Set<string>(['word', 'phrase', 'grammar', 'idiom', 'reference']);
 
 function clampNote(say: string): string {
   if (say.length <= MAX_NOTE_CHARS) return say;
@@ -218,7 +242,7 @@ export interface ParagraphScript {
 
 export async function writeParagraphScript(
   provider: LLMProvider,
-  opts: { languageName: string; sentences: readonly SentencePlan[]; previous: string | null },
+  opts: ScriptRequest,
 ): Promise<ParagraphScript> {
   const raw = await completeJson<unknown>(provider, {
     messages: [{ role: 'user', content: buildScriptPrompt(opts) }],

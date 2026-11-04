@@ -166,6 +166,7 @@ describe('processNextParagraph', () => {
       ['большой'],
     ]);
     expect(requests[0].sentences[0].words[0].facts).toBe('gloss of кот');
+    expect(requests[0].source).toBe('"Глава", from "Книга" by Автор');
 
     expect(await processNextParagraph(deps)).toEqual({ state: 'done', episodeId: queued.id });
     const done = lesson(queued.lessonId)!;
