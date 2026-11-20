@@ -451,6 +451,65 @@ export const schemas: Record<string, JsonSchema> = {
     required: ['id', 'body', 'status', 'wordCount', 'language', 'entryDate'],
   },
 
+  Paradigm: {
+    type: 'object',
+    description: 'A declension or conjugation table, built from the dictionary’s inflection rows.',
+    properties: {
+      lemma: { type: 'string' },
+      kind: { type: 'string', enum: ['noun', 'adjective', 'verb'] },
+      partsOfSpeech: { type: 'array', items: { type: 'string' } },
+      tables: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Empty for the single table of a noun or adjective.' },
+            columns: { type: 'array', items: { type: 'string' } },
+            rows: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  label: { type: 'string' },
+                  cells: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        tags: { type: 'array', items: { type: 'string' } },
+                        forms: {
+                          type: 'array',
+                          items: { type: 'string' },
+                          description: 'Empty when the dictionary lists no form for the cell.',
+                        },
+                      },
+                      required: ['tags', 'forms'],
+                    },
+                  },
+                },
+                required: ['label', 'cells'],
+              },
+            },
+          },
+          required: ['title', 'columns', 'rows'],
+        },
+      },
+      other: {
+        type: 'array',
+        description: 'Forms outside the tables, such as participles.',
+        items: {
+          type: 'object',
+          properties: {
+            label: { type: 'string' },
+            forms: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['label', 'forms'],
+        },
+      },
+    },
+    required: ['lemma', 'kind', 'partsOfSpeech', 'tables', 'other'],
+  },
+
   DictionaryEntry: {
     type: 'object',
     description: 'A dictionary result for one word.',
@@ -1616,6 +1675,31 @@ const dictionaryOps: Record<string, OperationDoc> = {
           type: 'object',
           properties: { entry: { oneOf: [ref('DictionaryEntry'), { type: 'null' }] } },
           required: ['entry'],
+        },
+      },
+    },
+  },
+  'GET /api/dictionary/paradigm': {
+    summary: 'Get a declension or conjugation table',
+    description:
+      'Builds the table of the word, or of the lemma it inflects from, from the built-in dictionary. Answers `200` with a null paradigm when there is none.',
+    tag: 'Dictionary',
+    sharedParams: LANG,
+    query: [
+      {
+        name: 'word',
+        description: 'The word, in any inflected form.',
+        schema: { type: 'string' },
+        required: true,
+      },
+    ],
+    responses: {
+      '200': {
+        description: 'The table, or null.',
+        schema: {
+          type: 'object',
+          properties: { paradigm: { oneOf: [ref('Paradigm'), { type: 'null' }] } },
+          required: ['paradigm'],
         },
       },
     },
@@ -3024,6 +3108,16 @@ const internalOps: Record<string, OperationDoc> = {
     tag: 'Practice',
     pathParams: { id: 'Episode identifier.' },
   },
+
+  'GET /api/forms/round': { summary: 'Get a round of the forms drill', tag: 'Practice' },
+  'POST /api/forms/answer': { summary: 'Count a forms drill answer', tag: 'Practice' },
+
+  'GET /api/conversation/voices': {
+    summary: 'List the voices that can read conversation replies',
+    tag: 'Practice',
+  },
+  'POST /api/conversation/reply': { summary: 'Get the conversation partner’s reply', tag: 'Practice' },
+  'POST /api/conversation/speak': { summary: 'Read a conversation reply aloud', tag: 'Practice' },
 
   'POST /api/tokens': { summary: 'Create a personal access token', tag: 'Settings' },
   'GET /api/tokens': { summary: 'List personal access tokens', tag: 'Settings' },

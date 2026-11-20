@@ -7,7 +7,7 @@
  * fall back to the AI translate API when null.
  */
 import { getActiveLanguage, getActivePack } from './data-layer';
-import { foldWord } from './languages';
+import { foldWord, type Paradigm } from './languages';
 import { apiFetch } from './api-base';
 
 export interface ExpandedDictionaryEntry {
@@ -67,6 +67,29 @@ export async function lookupWordRemote(word: string): Promise<ExpandedDictionary
   const entry: ExpandedDictionaryEntry | null = data.entry ?? null;
   sessionCache.set(key, entry);
   return entry;
+}
+
+const paradigmCache = new Map<string, Promise<Paradigm | null>>();
+
+/** The declension or conjugation table of `word` or its lemma; null when there is none. */
+export function fetchParadigm(word: string): Promise<Paradigm | null> {
+  const language = getActiveLanguage();
+  const key = `${language}:${foldWord(word, getActivePack())}`;
+  const cached = paradigmCache.get(key);
+  if (cached) return cached;
+  const request = apiFetch(
+    `/api/dictionary/paradigm?word=${encodeURIComponent(word)}&language=${language}`,
+  )
+    .then(async (res) => {
+      if (!res.ok) throw new Error(`paradigm ${res.status}`);
+      return ((await res.json()) as { paradigm: Paradigm | null }).paradigm;
+    })
+    .catch(() => {
+      paradigmCache.delete(key);
+      return null;
+    });
+  paradigmCache.set(key, request);
+  return request;
 }
 
 /** Drop a single cached entry (call after editing the dict to force a re-fetch).

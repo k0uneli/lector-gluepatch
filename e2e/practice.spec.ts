@@ -98,11 +98,10 @@ test.describe.serial("Practice - Type Mode Full Journey", () => {
     const input = page.locator('input[placeholder="..."]');
     await expect(input).toBeVisible();
 
-    // Should show translation (italic text). Scope to text-base so we hit the
-    // page's English translation, not the smaller italic text the drawer
-    // renders for its sentence section (which is always in the DOM).
-    const translation = page.locator("p.italic.text-base");
-    await expect(translation).toBeVisible();
+    // The translation starts hidden; clicking where it sits reveals it.
+    await expect(page.getByTestId("cloze-translation")).toHaveCount(0);
+    await page.getByRole("button", { name: "Show translation" }).click();
+    await expect(page.getByTestId("cloze-translation")).toBeVisible();
 
     // Should show mastery indicator
     await expect(page.getByText("Mastery:")).toBeVisible();
@@ -1115,5 +1114,62 @@ test.describe.serial("Practice - Cloze trailing punctuation", () => {
         await page.request.delete(apiUrl(`/api/cloze/${s.id}`));
       }
     }
+  });
+});
+
+test.describe("Practice - Translation reveal", () => {
+  async function startRound(page: Page) {
+    await waitForSetup(page);
+    await page.getByRole("button", { name: "10", exact: true }).click();
+    await page.getByRole("button", { name: "Type" }).click();
+    await page.getByRole("button", { name: "Start" }).click();
+    await expect(page.getByText("Fill in the blank")).toBeVisible({ timeout: 10000 });
+  }
+
+  test("the translation starts hidden and a click reveals it", async ({ page }) => {
+    await startRound(page);
+    const hidden = page.getByTestId("cloze-translation-hidden");
+    await expect(hidden).toBeVisible();
+    await expect(page.getByTestId("cloze-translation")).toHaveCount(0);
+
+    await hidden.click();
+    await expect(page.getByTestId("cloze-translation")).toBeVisible();
+    await expect(hidden).toHaveCount(0);
+  });
+
+  test("each new sentence starts hidden again", async ({ page }) => {
+    await startRound(page);
+    await page.getByTestId("cloze-translation-hidden").click();
+    await expect(page.getByTestId("cloze-translation")).toBeVisible();
+
+    const input = page.locator('input[placeholder="..."]');
+    await input.fill("wronganswer");
+    await input.press("Enter");
+    await page.getByRole("button", { name: "Next Sentence" }).click();
+
+    await expect(page.getByText("Fill in the blank")).toBeVisible();
+    await expect(page.getByTestId("cloze-translation-hidden")).toBeVisible();
+    await expect(page.getByTestId("cloze-translation")).toHaveCount(0);
+  });
+
+  test("Alt+T toggles the translation", async ({ page }) => {
+    await startRound(page);
+    await page.locator("body").click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press("Alt+KeyT");
+    await expect(page.getByTestId("cloze-translation")).toBeVisible();
+    await page.keyboard.press("Alt+KeyT");
+    await expect(page.getByTestId("cloze-translation-hidden")).toBeVisible();
+  });
+
+  test("the Shown setting shows the translation on every sentence", async ({ page }) => {
+    await page.goto("/settings");
+    await page.getByRole("button", { name: "Shown", exact: true }).click();
+    expect(await page.evaluate(() => localStorage.getItem("lector-hide-translation"))).toBe(
+      "false"
+    );
+
+    await startRound(page);
+    await expect(page.getByTestId("cloze-translation")).toBeVisible();
+    await expect(page.getByTestId("cloze-translation-hidden")).toHaveCount(0);
   });
 });

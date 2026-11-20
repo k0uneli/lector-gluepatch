@@ -13,6 +13,7 @@ import TargetText from '@/components/TargetText';
 import NestedWordButton from './components/NestedWordButton';
 import Gloss from './components/Gloss';
 import LemmaSenses from './components/LemmaSenses';
+import ParadigmButton from './components/ParadigmButton';
 import { lookupAnnouncement } from './lookup-announcement';
 
 export { type ExpandedDictionaryEntry } from './types';
@@ -80,7 +81,8 @@ export default function TranslationDrawer({
   useEffect(() => {
     if (!isOpen || docked) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      // Escape in a dialog opened from the drawer closes only that dialog.
+      if (e.key === 'Escape' && !document.querySelector('[data-slot="dialog-content"]')) onClose();
     };
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
@@ -234,17 +236,23 @@ export default function TranslationDrawer({
                   ) : null}
                 </div>
               </div>
-              <button
-                onClick={onClose}
-                className={clsx(
-                  'flex-shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
-                  docked && 'hidden',
-                )}
-                aria-label="Close"
-                title="Close (Esc)"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex flex-shrink-0 items-center gap-1">
+                <ParadigmButton
+                  word={word}
+                  enabled={!isPhrase && !isLoading && !!isDictionaryResult}
+                />
+                <button
+                  onClick={onClose}
+                  className={clsx(
+                    'flex-shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
+                    docked && 'hidden',
+                  )}
+                  aria-label="Close"
+                  title="Close (Esc)"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
           </div>
 

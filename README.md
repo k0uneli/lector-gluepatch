@@ -68,7 +68,7 @@ If you do not want to run a server, use the hosted app at [app.lector.dev](https
 
 ## Features
 
-- **Reader.** Import a file or a stream. Each word has a state: new, learning, or known. Tap a word for a translation. The reader accepts:
+- **Reader.** Import a file or a stream. Each word has a state: new, learning, or known. Tap a word for a translation. When the dictionary has the word's forms, a button in the definition opens its declension or conjugation table. The reader accepts:
 
   - an EPUB file
   - a Markdown file
@@ -77,9 +77,11 @@ If you do not want to run a server, use the hosted app at [app.lector.dev](https
   - a YouTube transcript
   - a podcast
 
-- **Cloze practice.** Frequency-ordered sentences. Choose an answer from a list, type the missing word, or say it. Voice mode shows each word as the speech model hears it. Voice mode is for self-hosted installs. Spaced repetition (SRS) with mastery levels. Russian and Greek have two grammar drills. In the first, you type only the case or verb ending. In the second, you see the dictionary form and write the form that the sentence needs. Russian verbs show both aspects, for example читать / прочитать. The drills need the language's dictionary.
+- **Cloze practice.** Frequency-ordered sentences. Choose an answer from a list, type the missing word, or say it. Voice mode shows each word as the speech model hears it. Voice mode is for self-hosted installs. Spaced repetition (SRS) with mastery levels. Russian and Greek have two grammar drills. In the first, you type only the case or verb ending. In the second, you see the dictionary form and write the form that the sentence needs. Russian verbs show both aspects, for example читать / прочитать. The drills need the language's dictionary. The English translation of each sentence is hidden until you click it.
+- **Forms.** A grammar drill for Russian and Greek with no sentence. You see a noun or verb in its dictionary form and a case or tense, for example "genitive plural". Type or say that form. The words come from your vocabulary first, then from the most common words. After each answer you can open the full table. Forms needs the language's dictionary.
 - **Recall.** A daily challenge. You translate English sentences into your target language, 10 a day by default. The sentences use words from your vocabulary. The AI writes the sentences and grades your answers, and you can change a grade. A correct answer moves its words up one level. A wrong answer moves them down. Recall needs an AI provider.
 - **Daily reading.** A new text each day, written from the words that you marked. In Settings, set the length (200 words by default) and the percentage of new words (5% by default). The text opens in the reader and stays in your library. Daily reading needs an AI provider.
+- **Conversation.** Talk with an AI partner in your target language. Speak into the microphone or type. The partner uses the words that you marked. In Settings, set the most new words a reply can use (3% by default) and the voice that reads replies: Google Cloud, a local speech server such as Chatterbox, or ElevenLabs. Speech input is for self-hosted installs. Conversation needs an AI provider.
 - **Podcast.** Make an episode from a chapter of a book, in the style of a slow-reading podcast. Each sentence is read slowly, then the narrator explains in English the words that you have not learned yet, with grammar and figures of speech. Each paragraph ends with a reading at normal speed, then an English translation. The episode plays as a listen-along lesson, so you can look up and save words from its transcript. Each book is a private podcast feed for a phone app on a self-hosted install. The script needs an AI provider. The voice uses Google Cloud, a local speech server on your own GPU, or ElevenLabs.
 - **Vocabulary.** Save words as you read. Track known and learning states. Save phrases as well as single words.
 - **Anki.** The [Lector Sync add-on](https://ankiweb.net/shared/info/1098736891) on AnkiWeb is the recommended integration. The add-on code is `1098736891`. Cloud mode and a remote HTTPS self-host always use it. A local self-host can instead push cards to AnkiConnect on the computer that runs Anki. Reviews in Anki can update mastery in Lector.

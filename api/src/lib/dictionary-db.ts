@@ -8,9 +8,13 @@ import {
   foldWord,
   getLanguageConfig,
   isValidLanguageCode,
+  buildParadigm,
+  isInflectionType,
+  readsAsOwnWord,
   latinLookupVariants,
   stripMarks,
   type InflectionRow,
+  type Paradigm,
 } from './languages';
 import { esperantoIpa } from '../../../languages/eo/ipa';
 import { stemCandidates } from '../../../languages/morphology';
@@ -1082,6 +1086,43 @@ export function findInflectionSource(
     console.warn(`[dictionary] inflection lookup failed for ${language}:`, err);
   }
   return null;
+}
+
+/** The table of `word`'s lemma when it is a form that does not read as its own word, else
+ *  the word's own. Null without a dictionary. */
+/** The headword's first `pos` gloss that is not a form-of note; null without one. */
+export function headwordGloss(lemma: string, language: string, pos: string): string | null {
+  const stmts = getStmts(language);
+  if (!stmts) return null;
+  const senses = stmts.selectSenses.all(lemma) as SenseRow[];
+  return senses.find((s) => s.pos === pos && !/\bof\s+\S+/u.test(s.gloss))?.gloss ?? null;
+}
+
+export function getParadigm(word: string, language: string): Paradigm | null {
+  const stmts = getStmts(language);
+  if (!stmts) return null;
+  const pack = getLanguageConfig(isValidLanguageCode(language) ? language : DEFAULT_LANGUAGE);
+  const folded = foldKey(word, language);
+  const key = STRESS_MARKED_LANGUAGES.has(language) ? stripStressMarks(folded) : folded;
+  const build = (lemma: string) => {
+    const lemmaPos = (stmts.selectPartsOfSpeech.all(lemma) as Array<{ pos: string | null }>)
+      .map((r) => r.pos)
+      .filter((pos): pos is string => !!pos);
+    return buildParadigm(lemma, lemmaPos, stmts.selectParadigm.all(lemma) as InflectionRow[], pack);
+  };
+  try {
+    const source = findInflectionSource(key, language, ({ type, lemmaPos }) =>
+      isInflectionType(type, lemmaPos),
+    );
+    if (source && !readsAsOwnWord(source.wordSenses, source.lemmaPos)) {
+      const lemma = build(source.lemma);
+      if (lemma) return lemma;
+    }
+    return build(key);
+  } catch (err) {
+    console.warn(`[dictionary] paradigm lookup failed for ${language}:`, err);
+    return null;
+  }
 }
 
 /**

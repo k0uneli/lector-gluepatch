@@ -277,6 +277,10 @@ export interface InflectionConfig {
   endings: readonly string[];
   /** Endings of dictionary forms. A form aligns with its lemma where both leftovers are endings. */
   lemmaEndings: readonly string[];
+  /** The paradigm cell a verb headword fills, when it is a finite form (el γράφω). */
+  verbLemmaTags?: readonly string[];
+  /** Cells for rows tagged with one bare tag: el έγραψα is tagged `past` but is the 1st singular aorist. */
+  bareTagCells?: Readonly<Record<string, readonly string[]>>;
 }
 
 export interface LanguageConfig {

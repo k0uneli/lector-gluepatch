@@ -228,7 +228,12 @@ export const el = {
   tatoebaCode: 'ell',
   fallbackTts: ['el', 'el-GR'],
   avoidWords: AVOID_WORDS,
-  inflection: { endings: ENDINGS, lemmaEndings: LEMMA_ENDINGS },
+  inflection: {
+    endings: ENDINGS,
+    lemmaEndings: LEMMA_ENDINGS,
+    verbLemmaTags: ['active', 'imperfective', 'present', 'first-person', 'singular'],
+    bareTagCells: { past: ['active', 'past', 'perfective', 'first-person', 'singular'] },
+  },
   testPhrase: 'Γεια σου! Τι κάνεις;',
   pronunciation: { audio: ['google'] as const },
   script: {

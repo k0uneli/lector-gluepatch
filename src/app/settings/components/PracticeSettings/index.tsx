@@ -8,12 +8,12 @@ import { getRecallDailyCount, RECALL_COUNT_KEY, RECALL_COUNT_OPTIONS } from '@/l
 import ReadingChallengeSettings from './ReadingChallengeSettings';
 
 export default function PracticeSettings() {
-  const [hideTranslation, setHideTranslation] = useState(false);
+  const [hideTranslation, setHideTranslation] = useState(true);
   const [recallCount, setRecallCount] = useState<number | null>(null);
 
   useEffect(() => {
     const load = () => {
-      setHideTranslation(localStorage.getItem(SETTINGS_KEYS.HIDE_TRANSLATION) === 'true');
+      setHideTranslation(localStorage.getItem(SETTINGS_KEYS.HIDE_TRANSLATION) !== 'false');
       setRecallCount(getRecallDailyCount());
     };
     load();
@@ -40,7 +40,7 @@ export default function PracticeSettings() {
       <div>
         <label className="block text-sm font-medium text-foreground">Translation</label>
         <p className="mb-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          Hide the English translation by default while practicing. Toggle it anytime with
+          Hide the English translation while practicing. Click the hidden translation, or press
           <KbdGroup>
             <Kbd>Alt</Kbd>
             <Kbd>T</Kbd>

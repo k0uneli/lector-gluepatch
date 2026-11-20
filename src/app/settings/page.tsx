@@ -10,6 +10,7 @@ import ThemeSettings from './components/ThemeSettings';
 import AnkiSettings from './components/AnkiSettings';
 import TTSSettings from './components/TTSSettings';
 import PodcastSettings from './components/PodcastSettings';
+import ConversationSettings from './components/ConversationSettings';
 import VoiceRecognitionSettings from './components/VoiceRecognitionSettings';
 import LLMSettings from './components/LLMSettings';
 import PracticeSettings from './components/PracticeSettings';
@@ -35,6 +36,7 @@ export default function SettingsPage() {
         <AnkiSettings />
         <TTSSettings />
         <PodcastSettings />
+        <ConversationSettings />
         {lectorMode() === 'selfhost' && <VoiceRecognitionSettings />}
         <ThemeSettings />
         <Timezone />

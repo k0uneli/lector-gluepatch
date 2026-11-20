@@ -1,6 +1,6 @@
 # Practice domain
 
-This domain runs cloze, voice cloze, and dictation with spaced repetition (SRS), plus the daily recall and reading challenges. Cards live in `clozeSentences`. Mastery 100 also writes the Vocabulary domain.
+This domain runs cloze, voice cloze, and dictation with spaced repetition (SRS), plus the daily recall and reading challenges and the Forms drill. The cloze English translation starts hidden on each sentence; a click or Alt+T shows it, and Settings can show it by default. Cards live in `clozeSentences`. Mastery 100 also writes the Vocabulary domain.
 
 Intervals in days come from `calculateNextReview`:
 
@@ -267,6 +267,29 @@ sequenceDiagram
 - The Review Due counts include cards that a drill round skips.
 
 Tests: `e2e/cloze-drills.spec.ts`. Unit: `languages/inflection.test.ts`, `src/app/practice/__tests__/utils.test.ts`, `api/src/routes/cloze-drill.test.ts`.
+
+## Forms
+
+**App domain:** Practice
+
+A grammar drill with no sentence, for packs with `inflection` (ru, el). The learner sees a noun or verb in its dictionary form and a case or tense, then types or says that form.
+
+| Role | Path | Function |
+| --- | --- | --- |
+| Screen | `src/app/practice/components/Forms/index.tsx` | `FormsPractice` |
+| Client | `src/app/practice/forms.ts` | `fetchFormsRound`, `gradeForm`, `gradeSpokenForm` |
+| API | `api/src/routes/forms.ts` | `GET /round`, `POST /answer` |
+| Logic | `api/src/lib/forms-drill.ts` | `candidateWords`, `buildFormsRound`, `pickItem` |
+| Tables | `api/src/lib/dictionary-db.ts` | `getParadigm`, `headwordGloss` |
+
+- Settings live in localStorage: the word kinds (`noun`, `verb` or both; nouns by default), typing or speaking, and 10 or 20 words.
+- Candidates are the learner's `knownWords` in a level or known state, shuffled, then the sentence bank's cloze words up to rank 2000. The dictionary has no frequency ranks, so the bank stands in for them.
+- Each candidate resolves through `getParadigm`. A lemma counts once, must be a noun or verb in the dictionary, and needs a gloss of that part of speech. A round tries at most 400 words. With both kinds chosen, the round mixes them evenly.
+- The cell is random among listed cells that do not hold the headword. Every form in the cell is accepted. Each item carries its paradigm, so the feedback screen shows the full table without another request.
+- Grading uses the practice `normalize`. An answer that matches only after mark folding (ru днем for днём) is correct with a spelling note. Greek already folds marks in practice, so it never gets the note. A spoken answer passes when any heard word matches.
+- Each answer adds 1 to `dailyStats.clozePracticed`.
+
+Tests: `api/src/lib/forms-drill.test.ts`, `api/src/routes/forms.test.ts`, `src/app/practice/__tests__/forms.test.ts`, `e2e/forms-practice.spec.ts`.
 
 ## Blacklist sentence
 

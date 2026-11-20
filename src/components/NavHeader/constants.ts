@@ -5,6 +5,7 @@ import {
   List,
   Library,
   ChartBar,
+  MessagesSquare,
   Podcast,
   Settings,
 } from 'lucide-react';
@@ -13,6 +14,7 @@ export const navLinks: Array<{ href: string; label: string; shortLabel?: string 
   { href: '/', label: 'Library' },
   { href: '/practice', label: 'Practice' },
   { href: '/podcast', label: 'Podcast' },
+  { href: '/conversation', label: 'Conversation', shortLabel: 'Talk' },
   { href: '/reading', label: 'Daily Reading', shortLabel: 'Reading' },
   { href: '/journal', label: 'Journal' },
   { href: '/vocab', label: 'Vocab' },
@@ -24,6 +26,7 @@ export const iconMap: Record<string, React.FC<{ size?: number | string }>> = {
   '/': Library,
   '/practice': Clipboard,
   '/podcast': Podcast,
+  '/conversation': MessagesSquare,
   '/reading': BookOpen,
   '/journal': Pencil,
   '/vocab': List,

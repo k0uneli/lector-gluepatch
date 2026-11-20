@@ -211,6 +211,30 @@ Tests: `e2e/reader-phrase-selection.spec.ts`, `e2e/reader-phrase-touch.spec.ts`.
 
 Tests: `e2e/nested-definitions.spec.ts`, `e2e/form-of-lemma.spec.ts`, `api/src/lib/dictionary-db.lemma.test.ts`.
 
+## Declension and conjugation table
+
+**App domain:** Translation
+
+A button at the top right of the definition drawer opens the word's table. The button shows only after an on-device dictionary hit, and only when the word has a table.
+
+| Role | Path | Function |
+| --- | --- | --- |
+| Button | `src/components/TranslationDrawer/components/ParadigmButton/index.tsx` | `ParadigmButton` |
+| Tables | `src/components/ParadigmTables/index.tsx` | `ParadigmTables` |
+| Client | `src/lib/dictionary-client.ts` | `fetchParadigm` |
+| API | `api/src/routes/dictionary.ts` | `GET /paradigm` |
+| Lookup | `api/src/lib/dictionary-db.ts` | `getParadigm` |
+| Builder | `languages/paradigm.ts` | `buildParadigm` |
+
+- `getParadigm` takes the lemma when the word is an inflected form that does not read as a word of its own (`readsAsOwnWord`), else the word itself. παιδιά gives the table of παιδί; так gives none.
+- `buildParadigm` picks a layout from the tags. Person tags make a verb: one person-by-number table per tense, a gender table for the Russian past, and participles under other forms. Gender tags on an agreeing part of speech make an adjective. Anything else with a case or number is a noun.
+- The headword fills the nominative singular, or the masculine nominative singular. A Greek verb headword fills its cell through `inflection.verbLemmaTags`, and a row tagged only `past` fills the 1st singular aorist through `inflection.bareTagCells`.
+- A bare case tag is singular. A bare `plural` is nominative plural. Dated, non-standard and unaccented rows drop out, and a cell keeps one form per accent-folded spelling, the accented one.
+- A cell the dictionary does not list shows a dash. The slim Russian dictionary often lacks the nominative plural.
+- Escape inside the table closes only the table. The drawer skips its Escape handler while a `dialog-content` element is open.
+
+Tests: `languages/paradigm.test.ts`, `api/src/routes/dictionary-paradigm.test.ts`, `e2e/paradigm-table.spec.ts`.
+
 ## Cache accepted translation
 
 **App domain:** Translation

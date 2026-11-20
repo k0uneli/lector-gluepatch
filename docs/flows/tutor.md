@@ -59,6 +59,29 @@ The widget calls `apiFetch` itself. The widget does not use `getChatMessages` or
 
 `e2e/chat.spec.ts`, `e2e/chat-language.spec.ts`.
 
+## Conversation
+
+**App domain:** Tutor
+
+The Conversation tab. The learner talks with an AI partner, by voice or by typing. The partner keeps to the learner's words.
+
+| Role | Path | Function |
+| --- | --- | --- |
+| Screen | `src/app/conversation/page.tsx` | `ConversationPage` |
+| Settings | `src/app/settings/components/ConversationSettings/index.tsx` | `ConversationSettings` |
+| Client | `src/lib/conversation.ts` | `requestReply`, `speakReply`, `pickEngine` |
+| Speech | `src/lib/stt/use-speech-capture.ts` | `useSpeechCapture` |
+| API | `api/src/routes/conversation.ts` | `GET /voices`, `POST /reply`, `POST /speak` |
+| Logic | `api/src/lib/conversation.ts` | `buildConversationReply`, `meterFor` |
+
+- The browser keeps the conversation in localStorage per language and sends the last 40 turns with each request. The API puts the last 20 into the prompt, after a system prompt with up to 800 of the learner's words and up to 25 learning words.
+- The new-word limit (`newPercent`, 0 to 20, default 3) comes from Settings. `CoverageMeter` from the daily reading measures each reply. A reply more than 5 points over the limit is rewritten once, and the reply with fewer new words is kept. The plan counts the turn as one LLM request.
+- `meterFor` caches the meter per user and language for 10 minutes, or until the number of known words changes.
+- Speech input uses `startRecognition` over `/api/stt/stream`, for self-hosted installs. The final transcript is sent as the learner's turn. Starting the microphone stops a reply that is playing.
+- `POST /speak` reads a reply with a podcast engine: Google Cloud, the local server (`PODCAST_TTS_URL`, for example Chatterbox) or ElevenLabs. The voice is the one the Podcast settings use. Audio goes through the shared TTS cache.
+
+Tests: `api/src/lib/conversation.test.ts`, `api/src/routes/conversation.test.ts`, `src/lib/__tests__/conversation.test.ts`, `e2e/conversation.spec.ts`.
+
 ## Cloze Explain
 
 **App domain:** Tutor

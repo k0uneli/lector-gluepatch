@@ -94,6 +94,7 @@ import { lectorMode } from '@/lib/api-base';
 import { useAnkiTransport } from '@/lib/anki-transport';
 import { addPracticeWordToAnki, type PracticeWordLookup } from './add-word-to-anki';
 import RecallPractice from './components/Recall';
+import FormsPractice from './components/Forms';
 import {
   completeOnboarding,
   encounteredOnboardingTerms,
@@ -139,9 +140,10 @@ export default function PracticePage() {
   const [originalRoundSize, setOriginalRoundSize] = useState<number>(20);
   const [seeded, setSeeded] = useState(false);
 
-  // Translation visibility. Initialised from the "Hide translation by default"
-  // setting on mount; Alt+T toggles it live during a round.
-  const [showTranslation, setShowTranslation] = useState(true);
+  // Translation visibility. Each sentence starts from the setting (hidden unless
+  // set to shown); a click or Alt+T reveals it.
+  const [showTranslation, setShowTranslation] = useState(false);
+  const translationShownByDefault = useRef(false);
 
   // Practice format (cloze vs dictation) and, within cloze, the answer mode.
   // Dictation ("type what you hear") requires synthesized audio — for
@@ -243,15 +245,16 @@ export default function PracticePage() {
         // Load saved practice format (cloze vs dictation). A stored dictation
         // preference is ignored for languages without synthesized audio.
         const savedFormat = localStorage.getItem(PRACTICE_FORMAT_SETTING_KEY);
+        const canDrill = supportsInflectionDrills(getActivePack());
         if (
           savedFormat === 'cloze' ||
           savedFormat === 'recall' ||
-          (savedFormat === 'dictation' && hasAudio())
+          (savedFormat === 'dictation' && hasAudio()) ||
+          (savedFormat === 'forms' && canDrill)
         ) {
           setPracticeFormat(savedFormat);
         }
 
-        const canDrill = supportsInflectionDrills(getActivePack());
         setDrillsAvailable(canDrill);
         const savedDrill = localStorage.getItem(CLOZE_DRILL_SETTING_KEY);
         if (canDrill && (savedDrill === 'ending' || savedDrill === 'inflect')) {
@@ -259,8 +262,9 @@ export default function PracticePage() {
         }
       }
 
-      // Respect the "hide translation by default" setting (Alt+T toggles live)
-      setShowTranslation(localStorage.getItem(SETTINGS_KEYS.HIDE_TRANSLATION) !== 'true');
+      translationShownByDefault.current =
+        localStorage.getItem(SETTINGS_KEYS.HIDE_TRANSLATION) === 'false';
+      setShowTranslation(translationShownByDefault.current);
 
       await migrateClozeSentences();
       await seedSentenceBank();
@@ -438,6 +442,7 @@ export default function PracticePage() {
       const activeFormat = override?.format ?? practiceFormat;
       const activeMode = override?.mode ?? practiceMode;
       setUserAnswer('');
+      setShowTranslation(translationShownByDefault.current);
       setFeedbackData(null);
       setDictationResult(null);
       setHintLetters(0);
@@ -986,7 +991,9 @@ export default function PracticePage() {
                   ? 'Dictation Practice'
                   : practiceFormat === 'recall'
                     ? 'Recall Practice'
-                    : 'Cloze Practice'
+                    : practiceFormat === 'forms'
+                      ? 'Forms Practice'
+                      : 'Cloze Practice'
               }
             ></PageHeader>
 
@@ -994,7 +1001,15 @@ export default function PracticePage() {
                 sentence, type it back). Both share the collection / round size /
                 review options below. */}
             <div className="mb-6">
-              <div className={`grid gap-2 ${dictationAvailable ? 'grid-cols-3' : 'grid-cols-2'}`}>
+              <div
+                className={`grid gap-2 ${
+                  {
+                    2: 'grid-cols-2',
+                    3: 'grid-cols-3',
+                    4: 'grid-cols-2 sm:grid-cols-4',
+                  }[2 + Number(dictationAvailable) + Number(drillsAvailable)]
+                }`}
+              >
                 {/* Explicit aria-labels keep each button's accessible name to
                     just "Cloze"/"Dictation" — the descriptive subtitle stays
                     visible but doesn't leak into role-based locators (e.g. the
@@ -1033,6 +1048,19 @@ export default function PracticePage() {
                     Translate from English
                   </div>
                 </Button>
+                {drillsAvailable && (
+                  <Button
+                    aria-label="Forms"
+                    onClick={() => handleSetPracticeFormat('forms')}
+                    variant={practiceFormat === 'forms' ? 'default' : 'secondary'}
+                    className="flex h-14 flex-col justify-center gap-0"
+                  >
+                    <div>Forms</div>
+                    <div className="mt-0.5 text-[11px] font-normal opacity-75">
+                      Cases and tenses
+                    </div>
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -1083,6 +1111,8 @@ export default function PracticePage() {
 
             {practiceFormat === 'recall' ? (
               <RecallPractice />
+            ) : practiceFormat === 'forms' ? (
+              <FormsPractice />
             ) : (
               <div className="rounded-2xl border border-border bg-card p-5">
                 <h2 className="mb-4 text-base font-semibold text-foreground">Learn New</h2>
@@ -1455,23 +1485,28 @@ export default function PracticePage() {
                           </span>
                         ))}
                       </p>
-                      {/* English translation — hidden when the user chooses to
-                          practise without it (toggle with Alt+T). */}
                       {showTranslation ? (
-                        <p className="mt-3 text-base text-muted-foreground italic">
+                        <p
+                          data-testid="cloze-translation"
+                          className="mt-3 text-base text-muted-foreground italic"
+                        >
                           {current.sentence.translation}
                         </p>
                       ) : (
                         <button
                           type="button"
+                          data-testid="cloze-translation-hidden"
                           onClick={() => setShowTranslation(true)}
-                          className="mt-3 inline-flex items-center gap-2 text-sm text-muted-foreground italic transition-colors hover:text-foreground"
+                          aria-label="Show translation"
+                          title="Click to show the translation (Alt+T)"
+                          className="group mt-3 block w-full cursor-pointer rounded-md text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                         >
-                          Show translation
-                          <KbdGroup>
-                            <Kbd>Alt</Kbd>
-                            <Kbd>T</Kbd>
-                          </KbdGroup>
+                          <span
+                            aria-hidden="true"
+                            className="block text-base text-muted-foreground italic blur-[6px] transition select-none group-hover:blur-[4px]"
+                          >
+                            {current.sentence.translation}
+                          </span>
                         </button>
                       )}
                     </div>

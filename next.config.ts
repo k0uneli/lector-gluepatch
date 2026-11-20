@@ -30,6 +30,9 @@ const buildTime = process.env.BUILD_TIME?.trim() || new Date().toISOString();
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  // Pins the workspace root (and Turbopack's) to this repo; otherwise Next
+  // infers it from the highest lockfile above, even a stray one in $HOME.
+  outputFileTracingRoot: __dirname,
   devIndicators: false,
   // Turbopack is the default in Next.js 16. Empty config silences the
   // "webpack config but no turbopack config" warning.

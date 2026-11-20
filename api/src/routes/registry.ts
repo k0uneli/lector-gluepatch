@@ -36,6 +36,8 @@ import learnerEvents from './learner-events';
 import emailUnsubscribe from './email-unsubscribe';
 import recall from './recall';
 import readingChallenge from './reading-challenge';
+import forms from './forms';
+import conversation from './conversation';
 import podcasts from './podcasts';
 
 export type RouteMount = {
@@ -83,6 +85,8 @@ export const routeMounts: readonly RouteMount[] = [
   { prefix: '/api/vocab', app: vocab },
   { prefix: '/api/recall', app: recall },
   { prefix: '/api/reading-challenge', app: readingChallenge },
+  { prefix: '/api/forms', app: forms },
+  { prefix: '/api/conversation', app: conversation },
   { prefix: '/api/podcasts', app: podcasts },
   { prefix: '/api/cloze', app: cloze },
   { prefix: '/api/stats', app: stats },

@@ -9,6 +9,7 @@ import {
   acceptedCacheContentBytes,
   acceptedCacheIdentity,
   cacheAcceptedEntry,
+  getParadigm,
   lookupWord,
   storedAcceptedCacheContentBytes,
   validateCacheAcceptedInput,
@@ -59,6 +60,15 @@ export function makeDictionaryRoutes(
       console.error('Dictionary lookup error:', error);
       return c.json({ error: error instanceof Error ? error.message : 'Lookup failed' }, 500);
     }
+  });
+
+  // GET /api/dictionary/paradigm?word=<word> — the declension or conjugation
+  // table of the word, or of its lemma; { paradigm: null } when there is none.
+  app.get('/paradigm', (c) => {
+    const word = c.req.query('word');
+    if (!word || !word.trim()) return c.json({ error: 'Word is required' }, 400);
+    const lang = resolveLanguage(c.req.query('language'), resolveUser(c));
+    return c.json({ paradigm: getParadigm(word.trim(), lang) });
   });
 
   // POST /api/dictionary/cache — persist a user-accepted AI translation.

@@ -217,6 +217,12 @@
     summary: "Enrich upgrades a bare gloss. Nested lookup follows a form-of link and keeps the original sentence.",
     steps: ["fn:enrichWord", "route:translate-enrich", "fn:findNestedWordRef", "fn:read-handleNestedLookup", "fn:read-handleWordClick"],
   });
+  N("flow:paradigm-table", "flow", "Declension and conjugation table", {
+    domain: "translation",
+    md: "translation.md#declension-and-conjugation-table",
+    summary: "A drawer header button. GET /api/dictionary/paradigm resolves the word to its lemma and builds tables from the inflection rows.",
+    steps: ["file:translation-drawer", "file:paradigm-button", "route:dict-paradigm", "fn:getParadigm", "fn:buildParadigm"],
+  });
   N("flow:cache-translation", "flow", "Cache accepted translation", {
     domain: "translation",
     md: "translation.md#cache-accepted-translation",
@@ -285,6 +291,12 @@
       "route:cloze-review",
     ],
   });
+  N("flow:forms-drill", "flow", "Forms drill", {
+    domain: "practice",
+    md: "practice.md#forms",
+    summary: "A base form and a case or tense, no sentence. GET /api/forms/round picks lemmas from knownWords, then the sentence bank, and a cell of each paradigm.",
+    steps: ["file:forms-practice", "route:forms-round", "fn:buildFormsRound", "fn:getParadigm", "table:knownWords", "table:clozeSentences", "route:forms-answer", "table:dailyStats"],
+  });
   N("flow:cloze-drills", "flow", "Cloze inflection drills", {
     domain: "practice",
     md: "practice.md#inflection-drills",
@@ -323,6 +335,12 @@
     md: "journal.md#save-journal-draft",
     summary: "Save Draft writes the row. No LLM call. After first create, a 3 second timer also writes.",
     steps: ["file:journal-page", "fn:createJournalEntry", "route:journal-create", "fn:updateJournalDraft", "route:journal-put"],
+  });
+  N("flow:conversation", "flow", "Conversation", {
+    domain: "tutor",
+    md: "tutor.md#conversation",
+    summary: "Spoken or typed chat with an AI partner held to the learner's words. Replies are measured, rewritten once when over the new-word limit, and read aloud by a podcast engine.",
+    steps: ["file:conversation-page", "fn:startRecognition", "route:stt-stream", "route:conversation-reply", "fn:buildConversationReply", "fn:getProvider", "table:knownWords", "route:conversation-speak", "fn:createPodcastVoice"],
   });
   N("flow:tutor-chat", "flow", "Tutor chat", {
     domain: "tutor",
@@ -780,6 +798,18 @@
   N("route:youtube-import", "route", "POST /api/import/youtube", { path: "api/src/routes/youtube-import.ts" });
   N("route:dict-lookup", "route", "GET /api/dictionary/lookup", { path: "api/src/routes/dictionary.ts" });
   N("route:dict-cache", "route", "POST /api/dictionary/cache", { path: "api/src/routes/dictionary.ts" });
+  N("route:dict-paradigm", "route", "GET /api/dictionary/paradigm", { path: "api/src/routes/dictionary.ts" });
+  N("fn:getParadigm", "fn", "getParadigm", { path: "api/src/lib/dictionary-db.ts" });
+  N("fn:buildParadigm", "fn", "buildParadigm", { path: "languages/paradigm.ts" });
+  N("file:paradigm-button", "file", "ParadigmButton", { path: "src/components/TranslationDrawer/components/ParadigmButton/index.tsx", domain: "translation" });
+  N("route:forms-round", "route", "GET /api/forms/round", { path: "api/src/routes/forms.ts" });
+  N("route:forms-answer", "route", "POST /api/forms/answer", { path: "api/src/routes/forms.ts" });
+  N("fn:buildFormsRound", "fn", "buildFormsRound", { path: "api/src/lib/forms-drill.ts" });
+  N("file:forms-practice", "file", "FormsPractice", { path: "src/app/practice/components/Forms/index.tsx", domain: "practice" });
+  N("route:conversation-reply", "route", "POST /api/conversation/reply", { path: "api/src/routes/conversation.ts" });
+  N("route:conversation-speak", "route", "POST /api/conversation/speak", { path: "api/src/routes/conversation.ts" });
+  N("fn:buildConversationReply", "fn", "buildConversationReply", { path: "api/src/lib/conversation.ts" });
+  N("file:conversation-page", "file", "Conversation page", { path: "src/app/conversation/page.tsx", domain: "tutor" });
   N("route:translate-gloss", "route", "POST /api/translate/gloss", { path: "api/src/routes/translate.ts" });
   N("route:translate-enrich", "route", "POST /api/translate/enrich", { path: "api/src/routes/translate.ts" });
   N("route:translate-post", "route", "POST /api/translate", { path: "api/src/routes/translate.ts" });
@@ -936,12 +966,13 @@
     "flow:in-context",
     "flow:phrase-selection",
     "flow:enrich-nested",
+    "flow:paradigm-table",
     "flow:cache-translation",
   ]);
   domainFlows("vocabulary", ["flow:save-vocab", "flow:vocab-list", "flow:known-word-import"]);
-  domainFlows("practice", ["flow:practice-word", "flow:dictation", "flow:recall", "flow:reading-challenge", "flow:voice-cloze", "flow:cloze-drills", "flow:blacklist"]);
+  domainFlows("practice", ["flow:practice-word", "flow:dictation", "flow:recall", "flow:reading-challenge", "flow:voice-cloze", "flow:cloze-drills", "flow:forms-drill", "flow:blacklist"]);
   domainFlows("journal", ["flow:journal-submit", "flow:journal-draft"]);
-  domainFlows("tutor", ["flow:tutor-chat", "flow:cloze-explain"]);
+  domainFlows("tutor", ["flow:tutor-chat", "flow:conversation", "flow:cloze-explain"]);
   domainFlows("listen", ["flow:speak-word", "flow:listen-along", "flow:podcast", "flow:youtube-captions"]);
   domainFlows("anki", ["flow:anki-push", "flow:anki-sync"]);
   domainFlows("onboarding", ["flow:language-setup", "flow:add-language"]);
@@ -1221,6 +1252,29 @@
   edge("route:recall-answer", "table:dailyStats", "writes");
   edge("route:recall-verdict", "table:vocab", "writes");
   edge("flow:reading-challenge", "file:reading-page", "starts");
+  edge("flow:paradigm-table", "file:paradigm-button", "starts");
+  edge("file:translation-drawer", "file:paradigm-button", "renders");
+  edge("file:paradigm-button", "route:dict-paradigm", "http");
+  edge("route:dict-paradigm", "fn:getParadigm", "calls");
+  edge("fn:getParadigm", "fn:buildParadigm", "calls");
+  edge("flow:forms-drill", "file:forms-practice", "starts");
+  edge("file:practice-page", "file:forms-practice", "opens");
+  edge("file:forms-practice", "route:forms-round", "http");
+  edge("file:forms-practice", "route:forms-answer", "http");
+  edge("file:forms-practice", "fn:startRecognition", "calls");
+  edge("route:forms-round", "fn:buildFormsRound", "calls");
+  edge("fn:buildFormsRound", "fn:getParadigm", "calls");
+  edge("route:forms-round", "table:knownWords", "reads");
+  edge("route:forms-round", "table:clozeSentences", "reads");
+  edge("route:forms-answer", "table:dailyStats", "writes");
+  edge("flow:conversation", "file:conversation-page", "starts");
+  edge("file:conversation-page", "fn:startRecognition", "calls");
+  edge("file:conversation-page", "route:conversation-reply", "http");
+  edge("file:conversation-page", "route:conversation-speak", "http");
+  edge("route:conversation-reply", "fn:buildConversationReply", "calls");
+  edge("fn:buildConversationReply", "fn:getProvider", "calls");
+  edge("route:conversation-reply", "table:knownWords", "reads");
+  edge("route:conversation-speak", "fn:createPodcastVoice", "calls");
   edge("file:reading-page", "route:reading-today", "http");
   edge("route:reading-today", "table:knownWords", "reads");
   edge("route:reading-today", "fn:buildReadingChallenge", "calls");
