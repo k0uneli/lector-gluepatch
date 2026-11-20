@@ -122,6 +122,18 @@ export class AnthropicProvider implements LLMProvider {
     }
   }
 
+  /** The Messages API takes system prompts as a top-level field, not as turns. */
+  private static splitSystem(messages: CompletionOptions['messages']) {
+    const system = messages
+      .filter((m) => m.role === 'system')
+      .map((m) => m.content)
+      .join('\n\n');
+    const turns = messages
+      .filter((m) => m.role !== 'system')
+      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+    return { system: system || undefined, turns };
+  }
+
   async complete(options: CompletionOptions): Promise<string> {
     const model = this.modelForTask(options.task);
     if (this.useAgentSdk) {
@@ -142,13 +154,12 @@ export class AnthropicProvider implements LLMProvider {
       return;
     }
 
+    const { system, turns } = AnthropicProvider.splitSystem(options.messages);
     const stream = this.client!.messages.stream({
       model,
       max_tokens: options.maxTokens,
-      messages: options.messages.map((m) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      })),
+      ...(system ? { system } : {}),
+      messages: turns,
     });
 
     for await (const event of stream) {
@@ -159,13 +170,12 @@ export class AnthropicProvider implements LLMProvider {
   }
 
   private async completeViaApi(options: CompletionOptions, model: string): Promise<string> {
+    const { system, turns } = AnthropicProvider.splitSystem(options.messages);
     const message = await this.client!.messages.create({
       model,
       max_tokens: options.maxTokens,
-      messages: options.messages.map((m) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      })),
+      ...(system ? { system } : {}),
+      messages: turns,
     });
 
     const content = message.content[0];
@@ -180,8 +190,8 @@ export class AnthropicProvider implements LLMProvider {
   }
 
   private async completeViaAgentSdk(options: CompletionOptions, model: string): Promise<string> {
-    // Build a single prompt from the messages
-    const prompt = options.messages.map((m) => m.content).join('\n\n');
+    const { system, turns } = AnthropicProvider.splitSystem(options.messages);
+    const prompt = turns.map((m) => m.content).join('\n\n');
 
     let resultText = '';
     let stopReason: string | null = null;
@@ -191,7 +201,7 @@ export class AnthropicProvider implements LLMProvider {
       options: {
         model,
         maxTurns: 1,
-        systemPrompt: options.messages.find((m) => m.role === 'system')?.content || undefined,
+        systemPrompt: system,
         allowedTools: [],
         permissionMode: 'bypassPermissions',
         // The SDK spawns a Claude Code subprocess that authenticates from its

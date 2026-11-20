@@ -363,3 +363,72 @@ describe('AnthropicProvider message batches (#226)', () => {
     await expect(p.getBatch('msgbatch_test')).rejects.toThrow('ECONNRESET');
   });
 });
+
+describe('system prompts', () => {
+  const messages = [
+    { role: 'system' as const, content: 'Be brief.' },
+    { role: 'user' as const, content: 'Hi' },
+    { role: 'assistant' as const, content: 'Hello' },
+    { role: 'user' as const, content: 'How are you?' },
+  ];
+  const turns = messages.slice(1);
+
+  test('the API path sends them as the top-level system field', async () => {
+    const p = new AnthropicProvider({ apiKey: 'sk-ant-test' });
+    let params: Record<string, unknown> = {};
+    (p as unknown as { client: unknown }).client = {
+      messages: {
+        create: async (body: Record<string, unknown>) => {
+          params = body;
+          return { content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' };
+        },
+      },
+    };
+    await p.complete({ messages, maxTokens: 50 });
+    expect(params.system).toBe('Be brief.');
+    expect(params.messages).toEqual(turns);
+  });
+
+  test('the API path omits the field when there is no system prompt', async () => {
+    const p = new AnthropicProvider({ apiKey: 'sk-ant-test' });
+    let params: Record<string, unknown> = {};
+    (p as unknown as { client: unknown }).client = {
+      messages: {
+        create: async (body: Record<string, unknown>) => {
+          params = body;
+          return { content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' };
+        },
+      },
+    };
+    await p.complete({ messages: turns, maxTokens: 50 });
+    expect('system' in params).toBe(false);
+  });
+
+  test('streaming sends them as the top-level system field', async () => {
+    const p = new AnthropicProvider({ apiKey: 'sk-ant-test' });
+    let params: Record<string, unknown> = {};
+    (p as unknown as { client: unknown }).client = {
+      messages: {
+        stream: (body: Record<string, unknown>) => {
+          params = body;
+          return (async function* () {
+            yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'ok' } };
+          })();
+        },
+      },
+    };
+    let text = '';
+    for await (const chunk of p.stream({ messages, maxTokens: 50 })) text += chunk;
+    expect(text).toBe('ok');
+    expect(params.system).toBe('Be brief.');
+    expect(params.messages).toEqual(turns);
+  });
+
+  test('the Agent SDK path passes them once, as systemPrompt', async () => {
+    const p = new AnthropicProvider({ oauthToken: 'sk-ant-oat-test' });
+    await p.complete({ messages, maxTokens: 50 });
+    const call = queryCalls.at(-1)!;
+    expect(call.options.systemPrompt).toBe('Be brief.');
+    expect(call.prompt).toBe('Hi\n\nHello\n\nHow are you?');
+  });
+});
