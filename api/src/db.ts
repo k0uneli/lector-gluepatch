@@ -526,7 +526,8 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_conversations_user_lang
       ON conversations(userId, language, updatedAt);
 
-    -- newWords is JSON string[]; audioPath is the learner's own recording (MP3).
+    -- newWords is JSON string[]; audioPath is the learner's own recording (MP3);
+    -- correction is JSON {corrected, corrections[], explanation} for a learner turn.
     CREATE TABLE IF NOT EXISTS conversation_messages (
       conversationId TEXT NOT NULL,
       userId TEXT NOT NULL DEFAULT 'local',
@@ -537,6 +538,7 @@ function getDb(): Database {
       newPercent REAL,
       newWords TEXT,
       audioPath TEXT,
+      correction TEXT,
       createdAt TEXT NOT NULL,
       PRIMARY KEY (conversationId, idx)
     );
@@ -717,6 +719,13 @@ function getDb(): Database {
   // on ordinary text lessons. Added after migrateCompositeTenantKeys (which
   // rebuilds lessons for the compound PK) so the columns survive that rebuild
   // when both run on the same boot.
+  const messageCols = _db.prepare('PRAGMA table_info(conversation_messages)').all() as {
+    name: string;
+  }[];
+  if (!messageCols.some((c) => c.name === 'correction')) {
+    _db.exec('ALTER TABLE conversation_messages ADD COLUMN correction TEXT');
+  }
+
   const lessonAudioCols = _db.prepare('PRAGMA table_info(lessons)').all() as { name: string }[];
   if (!lessonAudioCols.some((c) => c.name === 'audioPath')) {
     _db.exec('ALTER TABLE lessons ADD COLUMN audioPath TEXT');

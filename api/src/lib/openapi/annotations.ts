@@ -3137,6 +3137,11 @@ const internalOps: Record<string, OperationDoc> = {
     tag: 'Practice',
     pathParams: { id: 'Conversation id.' },
   },
+  'POST /api/conversation/chats/{id}/messages/{idx}/correction': {
+    summary: 'Check a turn for mistakes',
+    tag: 'Practice',
+    pathParams: { id: 'Conversation id.', idx: 'Message index.' },
+  },
   'POST /api/conversation/chats/{id}/reply': {
     summary: 'Retry the reply to the last turn',
     tag: 'Practice',

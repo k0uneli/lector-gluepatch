@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import clsx from 'clsx';
-import { ArrowLeft, LoaderCircle, Plus, Send, Volume2, VolumeX } from 'lucide-react';
+import { ArrowLeft, LoaderCircle, Plus, Send, SpellCheck, Volume2, VolumeX } from 'lucide-react';
 import { toast } from 'sonner';
 import MicButton from '@/components/MicButton';
 import PageHeader from '@/components/PageHeader';
@@ -24,6 +24,7 @@ import {
   fetchConversationVoices,
   getChat,
   getConversationAutoplay,
+  getConversationCorrections,
   getConversationNewPercent,
   getConversationPauseSeconds,
   getConversationStopMode,
@@ -32,6 +33,8 @@ import {
   messageAudioUrl,
   pickEngine,
   retryReply,
+  checkTurn,
+  CONVERSATION_CORRECTIONS_KEY,
   sendTurn,
   speakReply,
   type Chat,
@@ -45,10 +48,13 @@ import { isVoiceInputSupported } from '@/lib/stt';
 import { useSpeechCapture } from '@/lib/stt/use-speech-capture';
 import { speak } from '@/lib/tts';
 import { useWordPanel } from '@/lib/use-word-panel';
+import { useAnkiTransport } from '@/lib/anki-transport';
+import { addPracticeWordToAnki } from '@/app/practice/add-word-to-anki';
 import { useActiveLanguage } from '@/utils/hooks';
 import ChatList from './components/ChatList';
 import ClickableText from './components/ClickableText';
 import RecordingPanel from './components/RecordingPanel';
+import CorrectionBubble from './components/CorrectionBubble';
 
 export default function ConversationPage() {
   return (
@@ -80,6 +86,9 @@ function ConversationView() {
   const [playing, setPlaying] = useState<string | null>(null);
   const [shownTranslations, setShownTranslations] = useState<Set<number>>(new Set());
   const [heardNothing, setHeardNothing] = useState(false);
+  const [corrections, setCorrections] = useState(false);
+  const [checking, setChecking] = useState<Set<number>>(new Set());
+  const ankiTransport = useAnkiTransport();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrls = useRef(new Map<string, string>());
   /** Bumped whenever playback should stop, so a reply still loading never starts late. */
@@ -100,6 +109,7 @@ function ConversationView() {
       setNewPercent(getConversationNewPercent());
       setAutoplay(getConversationAutoplay());
       setStopMode(getConversationStopMode());
+      setCorrections(getConversationCorrections());
       setPauseSeconds(getConversationPauseSeconds());
       setVoiceInput(lectorMode() === 'selfhost' && isVoiceInputSupported());
     };
@@ -260,6 +270,7 @@ function ConversationView() {
       newPercent: null,
       newWords: [],
       hasAudio: false,
+      correction: null,
       createdAt: new Date().toISOString(),
     };
     setChat((prev) => prev && { ...prev, messages: [...prev.messages, pending] });
@@ -267,7 +278,7 @@ function ConversationView() {
     setThinking(true);
     setError(null);
     try {
-      const added = await sendTurn(id, trimmed, newPercent, recording);
+      const added = await sendTurn(id, trimmed, newPercent, recording, corrections);
       setChat(
         (prev) =>
           prev && {
@@ -354,6 +365,53 @@ function ConversationView() {
     }
   };
 
+  const toggleCorrections = () => {
+    const next = !corrections;
+    setCorrections(next);
+    localStorage.setItem(CONVERSATION_CORRECTIONS_KEY, String(next));
+  };
+
+  const check = async (idx: number) => {
+    if (!chat) return;
+    const id = chat.chat.id;
+    setChecking((prev) => new Set(prev).add(idx));
+    try {
+      const updated = await checkTurn(id, idx);
+      setChat(
+        (prev) =>
+          prev && {
+            ...prev,
+            messages: prev.messages.map((m) => (m.idx === updated.idx ? updated : m)),
+          },
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not check this turn');
+    } finally {
+      setChecking((prev) => {
+        const next = new Set(prev);
+        next.delete(idx);
+        return next;
+      });
+    }
+  };
+
+  const addWordToAnki = async () => {
+    if (!panel || ankiTransport === 'unknown') return;
+    const { audioFailed } = await addPracticeWordToAnki(
+      {
+        word: panel.word,
+        translation: panel.translation,
+        aiContextTranslation: panel.aiContextTranslation,
+        aiStructured: null,
+        dictEntry: panel.dictEntry,
+      },
+      panel.sentence,
+      ankiTransport,
+      pack,
+    );
+    if (audioFailed) toast.warning('Added to Anki without audio: no server voice.');
+  };
+
   const toggleAutoplay = () => {
     const next = !autoplay;
     setAutoplay(next);
@@ -390,6 +448,17 @@ function ConversationView() {
             >
               {autoplay && engine ? <Volume2 /> : <VolumeX />}
               {autoplay && engine ? 'Voice on' : 'Voice off'}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleCorrections}
+              aria-pressed={corrections}
+              data-testid="conversation-corrections"
+              title="Check each of your turns for mistakes"
+            >
+              <SpellCheck />
+              {corrections ? 'Corrections on' : 'Corrections off'}
             </Button>
             <Button variant="ghost" size="sm" onClick={goToList} data-testid="conversation-new">
               <Plus />
@@ -488,27 +557,43 @@ function ConversationView() {
           <ol className="space-y-3" data-testid="conversation-messages" aria-live="polite">
             {messages.map((m) =>
               m.role === 'user' ? (
-                <li key={m.idx} className="flex justify-end" data-testid="conversation-user">
-                  <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-4 py-2.5 text-primary-foreground">
-                    <ClickableText
-                      text={m.text}
-                      onWord={words.open}
-                      wordClassName="hover:bg-white/20"
-                      testId="conversation-user-text"
-                    />
-                    {m.hasAudio && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          playing === `mine-${m.idx}` ? stopAudio() : playMine(chat.chat.id, m.idx)
-                        }
-                        className="mt-1 rounded px-1.5 py-0.5 text-xs opacity-80 hover:bg-white/20 hover:opacity-100"
-                        data-testid="conversation-play-mine"
-                      >
-                        {playing === `mine-${m.idx}` ? 'Stop' : 'Play my recording'}
-                      </button>
-                    )}
+                <li key={m.idx} data-testid="conversation-user">
+                  <div className="flex justify-end">
+                    <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-4 py-2.5 text-primary-foreground">
+                      <ClickableText
+                        text={m.text}
+                        onWord={words.open}
+                        wordClassName="hover:bg-white/20"
+                        testId="conversation-user-text"
+                      />
+                      {m.hasAudio && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            playing === `mine-${m.idx}`
+                              ? stopAudio()
+                              : playMine(chat.chat.id, m.idx)
+                          }
+                          className="mt-1 rounded px-1.5 py-0.5 text-xs opacity-80 hover:bg-white/20 hover:opacity-100"
+                          data-testid="conversation-play-mine"
+                        >
+                          {playing === `mine-${m.idx}` ? 'Stop' : 'Play my recording'}
+                        </button>
+                      )}
+                      {corrections && !m.correction && m.idx >= 0 && (
+                        <button
+                          type="button"
+                          onClick={() => void check(m.idx)}
+                          disabled={checking.has(m.idx)}
+                          className="mt-1 rounded px-1.5 py-0.5 text-xs opacity-80 hover:bg-white/20 hover:opacity-100"
+                          data-testid="conversation-check"
+                        >
+                          {checking.has(m.idx) ? 'Checking…' : 'Check grammar'}
+                        </button>
+                      )}
+                    </div>
                   </div>
+                  {m.correction && <CorrectionBubble original={m.text} correction={m.correction} />}
                 </li>
               ) : (
                 <li key={m.idx} className="flex justify-start" data-testid="conversation-partner">
@@ -675,6 +760,8 @@ function ConversationView() {
           onIgnore={() => void words.ignore()}
           onRequestContextTranslation={() => void words.requestContextTranslation()}
           onLookupWord={(word) => void words.open(word, panel?.sentence ?? '')}
+          onAddToAnki={ankiTransport === 'unknown' ? undefined : addWordToAnki}
+          ankiInHeader
         />
       </TranslationDrawerSlot>
     </main>

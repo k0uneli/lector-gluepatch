@@ -10,9 +10,18 @@ const realGetProvider = actualLlm.getProvider as (...args: unknown[]) => unknown
 const calls: Array<Array<{ role: string; content: string }>> = [];
 let replies: unknown[] = [];
 let failNext = false;
+const correctionPrompts: string[] = [];
+let correctionReply: unknown = {};
+let failCorrection = false;
 const fakeProvider = {
   name: 'fake',
   async complete(options: { messages: Array<{ role: string; content: string }> }) {
+    const prompt = options.messages.map((m) => m.content).join('\n');
+    if (prompt.includes("Learner's turn:")) {
+      correctionPrompts.push(prompt);
+      if (failCorrection) throw new Error('correction down');
+      return JSON.stringify(correctionReply);
+    }
     calls.push(options.messages);
     if (failNext) {
       failNext = false;
@@ -93,6 +102,20 @@ beforeEach(() => {
     insert.run(USER, word, state);
   }
   calls.length = 0;
+  correctionPrompts.length = 0;
+  failCorrection = false;
+  correctionReply = {
+    corrected: 'Я вижу кота',
+    corrections: [
+      {
+        original: 'кот',
+        corrected: 'кота',
+        explanation: 'Accusative after вижу.',
+        type: 'grammar',
+      },
+    ],
+    explanation: 'The object of видеть takes the accusative case: кот becomes кота.',
+  };
   ttsRequests.length = 0;
   failNext = false;
   replies = [{ reply: 'Привет! Как дела?', translation: 'Hi! How are you?' }];
@@ -116,9 +139,16 @@ async function startChat(body: Record<string, unknown> = {}) {
   return (await res.json()) as { chat: { id: string }; messages: Array<Record<string, any>> };
 }
 
-function turn(id: string, text: string, audio?: Uint8Array, newPercent?: string) {
+function turn(
+  id: string,
+  text: string,
+  audio?: Uint8Array,
+  newPercent?: string,
+  correct = false,
+) {
   const form = new FormData();
   form.append('text', text);
+  if (correct) form.append('correct', '1');
   if (newPercent !== undefined) form.append('newPercent', newPercent);
   if (audio) form.append('audio', new Blob([audio as BlobPart]), 'turn.wav');
   return app.request(`/chats/${id}/turns?language=ru`, { method: 'POST', body: form });
@@ -254,6 +284,63 @@ describe('saved chats', () => {
     const res = await turn(chat.id, text);
     expect(res.status).toBe(400);
     expect((await res.json()).error).toContain(message);
+  });
+});
+
+describe('corrections', () => {
+  test('a checked turn comes back with its correction, stored for later', async () => {
+    const { chat } = await startChat();
+    const res = await turn(chat.id, 'Я вижу кот', new Uint8Array([1]), undefined, true);
+    expect(res.status).toBe(200);
+    const { messages } = (await res.json()) as { messages: Array<Record<string, any>> };
+    expect(messages[0].correction).toEqual(correctionReply);
+    expect(messages[1].role).toBe('assistant');
+    expect(correctionPrompts[0]).toContain('Я вижу кот');
+    expect(correctionPrompts[0]).toContain('speech-recognition transcript');
+    expect(correctionPrompts[0]).toContain('Привет! Как дела?');
+
+    const stored = (await getJson(`/chats/${chat.id}`)).body.messages[1];
+    expect(stored.correction.corrected).toBe('Я вижу кота');
+  });
+
+  test('a typed turn is checked as typed, and nothing is checked unless asked', async () => {
+    const { chat } = await startChat();
+    await turn(chat.id, 'Я вижу кот', undefined, undefined, true);
+    expect(correctionPrompts[0]).toContain('The learner typed the turn.');
+    await turn(chat.id, 'Ещё');
+    expect(correctionPrompts).toHaveLength(1);
+    const messages = (await getJson(`/chats/${chat.id}`)).body.messages;
+    expect(messages[3].correction).toBeNull();
+  });
+
+  test('a failed check still returns the reply', async () => {
+    const { chat } = await startChat();
+    failCorrection = true;
+    const res = await turn(chat.id, 'Я вижу кот', undefined, undefined, true);
+    expect(res.status).toBe(200);
+    const { messages } = (await res.json()) as { messages: Array<Record<string, any>> };
+    expect(messages[0].correction).toBeNull();
+    expect(messages[1].role).toBe('assistant');
+  });
+
+  test('an earlier turn can be checked on demand; partner turns cannot', async () => {
+    const { chat } = await startChat();
+    await turn(chat.id, 'Я вижу кот');
+    const res = await post(`/chats/${chat.id}/messages/1/correction`, {});
+    expect(res.status).toBe(200);
+    expect((await res.json()).message.correction.corrections).toHaveLength(1);
+    expect((await post(`/chats/${chat.id}/messages/0/correction`, {})).status).toBe(400);
+    failCorrection = true;
+    expect((await post(`/chats/${chat.id}/messages/1/correction`, {})).status).toBe(502);
+  });
+
+  test('a correct turn gets no explanation', async () => {
+    correctionReply = { corrected: 'Привет', corrections: [], explanation: 'Nothing wrong.' };
+    const { chat } = await startChat();
+    const { messages } = (await (await turn(chat.id, 'Привет', undefined, undefined, true)).json()) as {
+      messages: Array<Record<string, any>>;
+    };
+    expect(messages[0].correction).toEqual({ corrected: 'Привет', corrections: [], explanation: '' });
   });
 });
 

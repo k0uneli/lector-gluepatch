@@ -3,7 +3,13 @@ import { describe, expect, test } from 'bun:test';
 import type { WordClass } from './dictionary-db';
 import { getLanguageConfig } from './languages';
 import type { LLMProvider } from './llm';
-import { buildConversationReply, buildSystemPrompt, meterFor } from './conversation';
+import {
+  buildConversationReply,
+  buildCorrectionPrompt,
+  buildSystemPrompt,
+  correctLearnerTurn,
+  meterFor,
+} from './conversation';
 import { CoverageMeter, type KnownWord } from './reading-challenge';
 
 const ru = getLanguageConfig('ru');
@@ -134,5 +140,45 @@ describe('meterFor', () => {
     expect(meterFor('u\0ru', KNOWN.slice(1), ru, 3000)).not.toBe(a);
     const b = meterFor('u\0ru', KNOWN.slice(1), ru, 3000);
     expect(meterFor('u\0ru', KNOWN.slice(1), ru, 3000 + 11 * 60 * 1000)).not.toBe(b);
+  });
+});
+
+describe('correctLearnerTurn', () => {
+  const opts = { languageName: 'Russian', text: 'Я вижу кот', previous: 'Что ты видишь?', spoken: true };
+
+  test('the prompt carries the turn, the context and how it was entered', () => {
+    const prompt = buildCorrectionPrompt(opts);
+    expect(prompt).toContain('Я вижу кот');
+    expect(prompt).toContain('Что ты видишь?');
+    expect(prompt).toContain('speech-recognition transcript');
+    expect(buildCorrectionPrompt({ ...opts, spoken: false, previous: null })).toContain(
+      'The learner typed the turn.',
+    );
+  });
+
+  test('keeps well-formed corrections and drops broken ones', async () => {
+    const { provider } = fakeProvider({
+      corrected: ' Я вижу кота ',
+      corrections: [
+        { original: 'кот', corrected: 'кота', explanation: 'Accusative.', type: 'grammar' },
+        { original: 'x' },
+        'nonsense',
+        { original: 'Я', corrected: 'Я' },
+      ],
+      explanation: ' Use the accusative. ',
+    });
+    expect(await correctLearnerTurn(provider, opts)).toEqual({
+      corrected: 'Я вижу кота',
+      corrections: [
+        { original: 'кот', corrected: 'кота', explanation: 'Accusative.', type: 'grammar' },
+        { original: 'Я', corrected: 'Я', explanation: '', type: 'grammar' },
+      ],
+      explanation: 'Use the accusative.',
+    });
+  });
+
+  test('is null without a corrected turn', async () => {
+    const { provider } = fakeProvider({ corrections: [] });
+    expect(await correctLearnerTurn(provider, opts)).toBeNull();
   });
 });

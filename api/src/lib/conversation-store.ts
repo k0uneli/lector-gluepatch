@@ -3,6 +3,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { CONVERSATION_AUDIO_DIR, db } from '../db';
 import { saveAudioFile } from './audio-files';
+import type { TurnCorrection } from './conversation';
 import { mp3DurationMs, SAMPLE_RATE, type AudioToolkit } from './podcast/audio';
 
 /** Silence between turns in a stitched recording. */
@@ -16,6 +17,8 @@ export interface StoredMessage {
   newPercent: number | null;
   newWords: string[];
   hasAudio: boolean;
+  /** Learner turns checked while corrections were on. */
+  correction: TurnCorrection | null;
   createdAt: string;
 }
 
@@ -47,7 +50,17 @@ interface MessageRow {
   newPercent: number | null;
   newWords: string | null;
   audioPath: string | null;
+  correction: string | null;
   createdAt: string;
+}
+
+function parseCorrection(value: string | null): TurnCorrection | null {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as TurnCorrection;
+  } catch {
+    return null;
+  }
 }
 
 function parseWords(value: string | null): string[] {
@@ -79,6 +92,7 @@ function toMessage(row: MessageRow): StoredMessage {
     newPercent: row.newPercent,
     newWords: parseWords(row.newWords),
     hasAudio: !!row.audioPath,
+    correction: parseCorrection(row.correction),
     createdAt: row.createdAt,
   };
 }
@@ -123,7 +137,7 @@ export function getChat(
   const messages = (
     db
       .prepare(
-        `SELECT idx, role, text, translation, newPercent, newWords, audioPath, createdAt
+        `SELECT idx, role, text, translation, newPercent, newWords, audioPath, correction, createdAt
            FROM conversation_messages WHERE conversationId = ? AND userId = ? ORDER BY idx`,
       )
       .all(id, userId) as MessageRow[]
@@ -185,11 +199,28 @@ export function appendMessage(
   return toMessage(
     db
       .prepare(
-        `SELECT idx, role, text, translation, newPercent, newWords, audioPath, createdAt
+        `SELECT idx, role, text, translation, newPercent, newWords, audioPath, correction, createdAt
            FROM conversation_messages WHERE conversationId = ? AND userId = ? AND idx = ?`,
       )
       .get(id, userId, next) as MessageRow,
   );
+}
+
+/** Stores the check of a learner turn; returns the updated message, or null. */
+export function setCorrection(
+  userId: string,
+  id: string,
+  idx: number,
+  correction: TurnCorrection,
+): StoredMessage | null {
+  const result = db
+    .prepare(
+      `UPDATE conversation_messages SET correction = ?
+        WHERE conversationId = ? AND userId = ? AND idx = ? AND role = 'user'`,
+    )
+    .run(JSON.stringify(correction), id, userId, idx);
+  if (result.changes === 0) return null;
+  return getChat(userId, id)?.messages.find((m) => m.idx === idx) ?? null;
 }
 
 export function deleteChat(userId: string, id: string): boolean {

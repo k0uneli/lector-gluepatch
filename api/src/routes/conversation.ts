@@ -7,6 +7,7 @@ import { serveRangedFile } from '../lib/audio-files';
 import { config, type LectorMode } from '../lib/config';
 import {
   buildConversationReply,
+  correctLearnerTurn,
   CONVERSATION_DEFAULT_NEW_PERCENT,
   CONVERSATION_MAX_MESSAGE_LENGTH,
   CONVERSATION_MAX_NEW_PERCENT,
@@ -26,6 +27,8 @@ import {
   messageAudioPath,
   recordingPath,
   saveRecording,
+  setCorrection,
+  type StoredMessage,
 } from '../lib/conversation-store';
 import { entitlements, planLimitResponse } from '../lib/entitlements';
 import { getLanguageConfig, type LanguageConfig } from '../lib/languages';
@@ -149,6 +152,40 @@ export function makeConversationRoutes(
           502,
         ),
       };
+    }
+  }
+
+  /** Checks one learner turn and stores the result; null when the check failed. */
+  async function check(
+    userId: string,
+    chatId: string,
+    language: string,
+    message: StoredMessage,
+  ): Promise<StoredMessage | null> {
+    const verdict = entitlements.reserve(userId, 'llmRequestsPerMonth');
+    if (!verdict.allowed) return null;
+    const messages = getChat(userId, chatId)?.messages ?? [];
+    const previous =
+      messages.filter((m) => m.idx < message.idx && m.role === 'assistant').at(-1)?.text ?? null;
+    try {
+      const correction = await correctLearnerTurn(
+        getProvider(userId, { byok: verdict.reservation.byok }),
+        {
+          languageName: packForLanguage(language).name,
+          text: message.text,
+          previous,
+          spoken: message.hasAudio,
+        },
+      );
+      if (!correction) {
+        entitlements.refund(verdict.reservation);
+        return null;
+      }
+      return setCorrection(userId, chatId, message.idx, correction);
+    } catch (error) {
+      entitlements.refund(verdict.reservation);
+      console.error('Conversation correction error:', error);
+      return null;
     }
   }
 
@@ -320,11 +357,32 @@ export function makeConversationRoutes(
         }
       }
       const user = appendMessage(userId, chat.chat.id, { role: 'user', text, audioPath });
-      const outcome = await reply(c, userId, chat.chat.id, chat.language, newPercent);
+      const [outcome, checked] = await Promise.all([
+        reply(c, userId, chat.chat.id, chat.language, newPercent),
+        form.get('correct') === '1'
+          ? check(userId, chat.chat.id, chat.language, user)
+          : Promise.resolve(null),
+      ]);
       if (!outcome.ok) return outcome.response;
-      return c.json({ messages: [user, outcome.message] });
+      return c.json({ messages: [checked ?? user, outcome.message] });
     },
   );
+
+  // POST /api/conversation/chats/:id/messages/:idx/correction — check one learner turn.
+  app.post('/chats/:id/messages/:idx/correction', async (c) => {
+    const userId = getCurrentUserId(c);
+    const chat = ownedChat(c, userId);
+    if (!chat) return c.json({ error: 'Conversation not found' }, 404);
+    const message = chat.messages.find((m) => m.idx === Number(c.req.param('idx')));
+    if (!message || message.role !== 'user') {
+      return c.json({ error: 'Only your own turns can be checked' }, 400);
+    }
+    const checked = await check(userId, chat.chat.id, chat.language, message);
+    if (!checked) {
+      return c.json({ error: 'Could not check this turn. Check the AI provider in Settings.' }, 502);
+    }
+    return c.json({ message: checked });
+  });
 
   // POST /api/conversation/chats/:id/reply — retry the reply to the learner's last turn.
   app.post('/chats/:id/reply', async (c) => {

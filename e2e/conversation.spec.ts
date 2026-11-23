@@ -1,4 +1,5 @@
 import { test, expect, Page, Route, WebSocket } from '@playwright/test';
+import { apiUrl } from './api';
 import {
   clearRecognizer,
   FAKE_MICROPHONE,
@@ -35,7 +36,33 @@ interface Msg {
   newPercent: number | null;
   newWords: string[];
   hasAudio: boolean;
+  correction: Correction | null;
   createdAt: string;
+}
+
+interface Correction {
+  corrected: string;
+  corrections: Array<{ original: string; corrected: string; explanation: string; type: string }>;
+  explanation: string;
+}
+
+/** 'eet' marks a turn with a mistake; anything else is right. */
+function correctionFor(text: string): Correction {
+  return text.includes(' eet ')
+    ? {
+        corrected: text.replace(' eet ', ' geëet ').replace('geëet brood', 'brood geëet'),
+        corrections: [
+          {
+            original: 'eet brood',
+            corrected: 'brood geëet',
+            explanation: 'The past participle goes to the end.',
+            type: 'word_order',
+          },
+        ],
+        explanation:
+          'In the perfect tense, het takes the past participle geëet at the end of the clause.',
+      }
+    : { corrected: text, corrections: [], explanation: '' };
 }
 
 interface StoredChat {
@@ -93,7 +120,8 @@ async function mockConversation(page: Page, options: MockOptions = {}) {
   const chats = new Map<string, StoredChat>((options.chats ?? []).map((c) => [c.chat.id, c]));
   const seen = {
     creates: [] as Array<Record<string, unknown>>,
-    turns: [] as Array<{ text: string; hasAudio: boolean; newPercent: string }>,
+    turns: [] as Array<{ text: string; hasAudio: boolean; newPercent: string; correct?: boolean }>,
+    checks: [] as number[],
     speaks: [] as Array<Record<string, unknown>>,
     imports: [] as Array<Record<string, unknown>>,
     recordings: 0,
@@ -117,8 +145,13 @@ async function mockConversation(page: Page, options: MockOptions = {}) {
       hasAudio: false,
     });
   };
-  const add = (chat: StoredChat, m: Omit<Msg, 'idx' | 'createdAt'>): Msg => {
-    const msg = { ...m, idx: chat.messages.length, createdAt: new Date().toISOString() };
+  const add = (chat: StoredChat, m: Omit<Msg, 'idx' | 'createdAt' | 'correction'>): Msg => {
+    const msg = {
+      ...m,
+      correction: null,
+      idx: chat.messages.length,
+      createdAt: new Date().toISOString(),
+    };
     chat.messages.push(msg);
     chat.chat.messageCount = chat.messages.length;
     chat.chat.preview = chat.messages[0].text;
@@ -226,7 +259,13 @@ async function mockConversation(page: Page, options: MockOptions = {}) {
         raw.match(new RegExp(`name="${name}"\\r\\n\\r\\n([\\s\\S]*?)\\r\\n--`))?.[1] ?? '';
       const text = Buffer.from(field('text'), 'latin1').toString('utf8');
       const hasAudio = raw.includes('name="audio"');
-      seen.turns.push({ text, hasAudio, newPercent: field('newPercent') });
+      const correct = field('correct') === '1';
+      seen.turns.push({
+        text,
+        hasAudio,
+        newPercent: field('newPercent'),
+        ...(correct ? { correct } : {}),
+      });
       const user = add(chat, {
         role: 'user',
         text,
@@ -235,9 +274,16 @@ async function mockConversation(page: Page, options: MockOptions = {}) {
         newWords: [],
         hasAudio,
       });
+      if (correct) user.correction = correctionFor(text);
       const answer = reply(chat);
       if (!answer) await failure(route);
       else await route.fulfill({ json: { messages: [user, answer] } });
+    } else if (/^\/messages\/\d+\/correction$/.test(rest)) {
+      const idx = Number(rest.split('/')[2]);
+      seen.checks.push(idx);
+      const message = chat.messages[idx];
+      message.correction = correctionFor(message.text);
+      await route.fulfill({ json: { message } });
     } else if (rest === '/reply') {
       const answer = reply(chat);
       if (!answer) await failure(route);
@@ -531,6 +577,116 @@ test.describe('Conversation', () => {
     await expect(page.getByTestId('conversation-history-item')).toContainText('old');
     expect(seen.imports).toHaveLength(1);
     expect(await page.evaluate(() => localStorage.getItem('lector-conversation:af'))).toBeNull();
+  });
+
+  test('corrections mark mistakes in red and explain them', async ({ page }) => {
+    const { seen } = await mockConversation(page, { configured: false });
+    await startConversation(page);
+    const toggle = page.getByTestId('conversation-corrections');
+    await expect(toggle).toHaveText('Corrections off');
+    await toggle.click();
+    await expect(toggle).toHaveText('Corrections on');
+
+    await page.getByTestId('conversation-input').fill('Ek het eet brood gister');
+    await page.getByTestId('conversation-send').click();
+    await expect(page.getByTestId('conversation-reply')).toHaveCount(2);
+    expect(seen.turns[0]).toMatchObject({ text: 'Ek het eet brood gister', correct: true });
+
+    const bubble = page.getByTestId('conversation-correction');
+    await expect(bubble.getByTestId('conversation-correction-removed')).toHaveText('eet');
+    await expect(bubble.getByTestId('conversation-correction-added')).toHaveText('geëet');
+    await expect(page.getByTestId('conversation-user-text')).toHaveText('Ek het eet brood gister');
+    await expect(bubble.getByTestId('conversation-correction-details')).toHaveCount(0);
+    await bubble.getByTestId('conversation-correction-toggle').click();
+    await expect(bubble.getByTestId('conversation-correction-details')).toContainText(
+      'The past participle goes to the end.',
+    );
+    await expect(bubble.getByTestId('conversation-correction-details')).toContainText(
+      'takes the past participle geëet',
+    );
+
+    await page.getByTestId('conversation-input').fill('Ek is honger');
+    await page.getByTestId('conversation-send').click();
+    await expect(page.getByTestId('conversation-correct')).toHaveText('Looks right');
+
+    await page.reload();
+    await expect(page.getByTestId('conversation-corrections')).toHaveText('Corrections on');
+    await expect(page.getByTestId('conversation-correction-removed')).toHaveText('eet');
+  });
+
+  test('an earlier turn can be checked when corrections are on', async ({ page }) => {
+    const { seen } = await mockConversation(page, { configured: false });
+    await startConversation(page);
+    await page.getByTestId('conversation-input').fill('Ek het eet brood');
+    await page.getByTestId('conversation-send').click();
+    await expect(page.getByTestId('conversation-reply')).toHaveCount(2);
+    expect(seen.turns[0].correct).toBeUndefined();
+    await expect(page.getByTestId('conversation-check')).toHaveCount(0);
+    await expect(page.getByTestId('conversation-correction')).toHaveCount(0);
+
+    await page.getByTestId('conversation-corrections').click();
+    await page.getByTestId('conversation-check').click();
+    await expect(page.getByTestId('conversation-correction-added')).toHaveText('geëet');
+    await expect(page.getByTestId('conversation-check')).toHaveCount(0);
+    expect(seen.checks).toEqual([1]);
+  });
+
+  test('the definition card adds a word to Anki from its header', async ({ page }) => {
+    await mockConversation(page, { configured: false });
+    await mockLookup(page);
+    await page.request.delete(apiUrl('/api/settings/ankiConnectUrl')).catch(() => {});
+    await page.request.delete(apiUrl('/api/settings/ankiTransport')).catch(() => {});
+    const calls: Array<{
+      action: string;
+      params?: { note?: { fields?: Record<string, string> } };
+    }> = [];
+    const anki = async (route: Route) => {
+      const headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': '*',
+        'Content-Type': 'application/json',
+      };
+      if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 200, headers });
+      const body = JSON.parse(route.request().postData() || '{}');
+      calls.push(body);
+      const results: Record<string, unknown> = { version: 6, createDeck: 1, addNote: 1234567890 };
+      await route.fulfill({
+        status: 200,
+        headers,
+        body: JSON.stringify({ result: results[body.action] ?? null, error: null }),
+      });
+    };
+    await page.route('**://localhost:8765/**', anki);
+    await page.route('http://localhost:8765/', anki);
+    try {
+      await startConversation(page);
+      await page
+        .getByTestId('conversation-reply')
+        .first()
+        .getByRole('button', { name: 'Look up Hoe' })
+        .click();
+      const drawer = page.getByTestId('translation-drawer');
+      await expect(drawer).toContainText('meaning of Hoe');
+      const anki = drawer.getByTestId('add-to-anki-btn');
+      await expect(anki).toHaveCount(1);
+      await expect(anki).toHaveText('+ Anki');
+      const header = drawer
+        .locator('div', { has: page.getByRole('button', { name: 'Close' }) })
+        .first();
+      await expect(header.getByTestId('add-to-anki-btn')).toBeVisible();
+      await anki.click();
+      await expect(anki).toHaveText('✓ Anki');
+      const note = calls.find((c) => c.action === 'addNote');
+      expect(note?.params?.note?.fields).toBeTruthy();
+    } finally {
+      const vocab = (await (await page.request.get(apiUrl('/api/vocab'))).json()) as Array<{
+        id: string;
+        text: string;
+      }>;
+      for (const v of vocab.filter((v) => v.text === 'hoe')) {
+        await page.request.delete(apiUrl(`/api/vocab/${v.id}`));
+      }
+    }
   });
 
   test('the settings panel stores its choices', async ({ page }) => {

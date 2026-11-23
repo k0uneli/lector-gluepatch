@@ -75,7 +75,8 @@ The Conversation tab. The learner talks with an AI partner, by voice or by typin
 | Speech | `src/lib/stt/use-speech-capture.ts` | `useSpeechCapture` |
 | API | `api/src/routes/conversation.ts` | `GET /voices`, `POST /speak`, `/chats` and `/chats/:id/*` |
 | Storage | `api/src/lib/conversation-store.ts` | `appendMessage`, `saveRecording`, `buildRecording` |
-| Logic | `api/src/lib/conversation.ts` | `buildConversationReply`, `meterFor` |
+| Logic | `api/src/lib/conversation.ts` | `buildConversationReply`, `correctLearnerTurn`, `meterFor` |
+| Diff | `src/lib/correction-diff.ts` | `diffCorrection` |
 
 - `conversations` and `conversation_messages` hold each chat. Files live in `DATA_DIR/conversations/<id>/`: one MP3 per spoken learner turn, and `conversation.mp3` for the stitched recording. Deleting a chat removes its folder; account erasure does too.
 - `POST /chats` writes the opening reply; a failed opening leaves no chat. `POST /chats/:id/turns` is multipart: `text`, `newPercent` and an optional `audio` file. It saves the learner turn first, so a failed reply leaves it in place and `POST /chats/:id/reply` retries.
@@ -83,10 +84,11 @@ The Conversation tab. The learner talks with an AI partner, by voice or by typin
 - Speech input uses `startRecognition` with `maxSeconds: 120`. In auto-stop mode a pause ends the turn: 2.5 s by default, 1 to 8 s in Settings; in press-stop mode only the stop button or the two-minute cap does. The browser keeps the captured 16 kHz PCM and uploads it as WAV; the API stores it as MP3.
 - Starting the microphone cancels any reply audio, including audio still loading, so a late reply never plays over the learner. A reply arriving while the microphone is on does not auto-play.
 - `POST /chats/:id/recording` decodes each turn with the podcast ffmpeg toolkit, joins them with 700 ms pauses and encodes one MP3. Partner turns use the chosen engine through the TTS cache; typed learner turns are skipped. `recordingMessages` lets the screen offer an update when the chat has grown.
-- Each word in a bubble opens the definition drawer: dictionary first, then an AI gloss, with level, known and ignore actions that write `vocab` and `knownWords`.
+- Each word in a bubble opens the definition drawer: dictionary first, then an AI gloss, with level, known and ignore actions that write `vocab` and `knownWords`. The drawer's Add to Anki button sits in its header here (`ankiInHeader`) and uses the practice page's `addPracticeWordToAnki`.
+- With Corrections on (header switch, localStorage), a turn is sent with `correct=1`. `correctLearnerTurn` runs beside the reply, as a second LLM request, and its result is stored in `conversation_messages.correction`; a failed check only leaves the turn unchecked. `POST /chats/:id/messages/:idx/correction` checks an earlier turn. A spoken turn is checked as a transcript, so punctuation, capitals and likely mis-hearings do not count. The screen shows the turn again under the bubble, with `diffCorrection` marking removed words struck through and added words in red, and a Why? toggle for the full explanation.
 - A conversation that earlier versions kept in localStorage is imported once, then removed from the browser.
 
-Tests: `api/src/lib/conversation.test.ts`, `api/src/routes/conversation.test.ts`, `src/lib/__tests__/conversation.test.ts`, `src/lib/stt/audio.test.ts`, `e2e/conversation.spec.ts`.
+Tests: `api/src/lib/conversation.test.ts`, `api/src/routes/conversation.test.ts`, `src/lib/__tests__/conversation.test.ts`, `src/lib/stt/audio.test.ts`, `src/lib/__tests__/correction-diff.test.ts`, `e2e/conversation.spec.ts`.
 
 ## Cloze Explain
 

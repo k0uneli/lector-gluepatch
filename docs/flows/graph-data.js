@@ -809,6 +809,7 @@
   N("route:conversation-turns", "route", "POST /api/conversation/chats/:id/turns", { path: "api/src/routes/conversation.ts" });
   N("route:conversation-recording", "route", "POST /api/conversation/chats/:id/recording", { path: "api/src/routes/conversation.ts" });
   N("fn:buildRecording", "fn", "buildRecording", { path: "api/src/lib/conversation-store.ts" });
+  N("fn:correctLearnerTurn", "fn", "correctLearnerTurn", { path: "api/src/lib/conversation.ts" });
   N("route:conversation-speak", "route", "POST /api/conversation/speak", { path: "api/src/routes/conversation.ts" });
   N("fn:buildConversationReply", "fn", "buildConversationReply", { path: "api/src/lib/conversation.ts" });
   N("file:conversation-page", "file", "Conversation page", { path: "src/app/conversation/page.tsx", domain: "tutor" });
@@ -1280,6 +1281,8 @@
   edge("fn:buildRecording", "fn:createPodcastVoice", "calls");
   edge("file:conversation-page", "route:conversation-speak", "http");
   edge("route:conversation-turns", "fn:buildConversationReply", "calls");
+  edge("route:conversation-turns", "fn:correctLearnerTurn", "calls");
+  edge("fn:correctLearnerTurn", "fn:getProvider", "calls");
   edge("fn:buildConversationReply", "fn:getProvider", "calls");
   edge("route:conversation-turns", "table:knownWords", "reads");
   edge("route:conversation-speak", "fn:createPodcastVoice", "calls");

@@ -48,6 +48,7 @@ export default function TranslationDrawer({
   onRetranslate,
   onLookupWord,
   onAddToAnki,
+  ankiInHeader = false,
   onAddCloze,
   sentenceCardIsCloze = true,
 }: TranslationDrawerProps) {
@@ -103,6 +104,18 @@ export default function TranslationDrawer({
   const currentState = wordState ?? existingEntry?.state ?? 'new';
   const stateColors = wordStateColors[currentState];
   const isPhrase = word.includes(' ');
+  const canAddToAnki =
+    !isPhrase && !!onAddToAnki && !!(entry?.senses?.length || aiTranslation) && !isLoading;
+  const handleAddToAnki = async () => {
+    if (!onAddToAnki || ankiStatus === 'loading' || ankiStatus === 'done') return;
+    setAnkiStatus('loading');
+    try {
+      await onAddToAnki();
+      setAnkiStatus('done');
+    } catch {
+      setAnkiStatus('error');
+    }
+  };
   // After a nested lookup (issue #106) the drawer keeps the sentence of the
   // word the user originally clicked — genuine provenance, but not context
   // for the current word unless it actually occurs in it ("sien" is not in
@@ -237,6 +250,30 @@ export default function TranslationDrawer({
                 </div>
               </div>
               <div className="flex flex-shrink-0 items-center gap-1">
+                {ankiInHeader && canAddToAnki && (
+                  <button
+                    data-testid="add-to-anki-btn"
+                    onClick={() => void handleAddToAnki()}
+                    disabled={ankiStatus === 'loading' || ankiStatus === 'done'}
+                    title={ankiStatus === 'error' ? 'Anki error. Click to retry.' : 'Add to Anki'}
+                    className={clsx(
+                      'flex-shrink-0 rounded-lg px-2 py-1 text-xs font-medium transition-colors',
+                      ankiStatus === 'done'
+                        ? 'cursor-default text-[var(--primary-text)]'
+                        : ankiStatus === 'error'
+                          ? 'text-destructive hover:bg-destructive/10'
+                          : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                    )}
+                  >
+                    {ankiStatus === 'done'
+                      ? '✓ Anki'
+                      : ankiStatus === 'loading'
+                        ? 'Adding…'
+                        : ankiStatus === 'error'
+                          ? 'Retry Anki'
+                          : '+ Anki'}
+                  </button>
+                )}
                 <ParadigmButton
                   word={word}
                   enabled={!isPhrase && !isLoading && !!isDictionaryResult}
@@ -635,19 +672,10 @@ export default function TranslationDrawer({
                 </button>
               )}
               {/* Anki — single word: pure word card */}
-              {!isPhrase && onAddToAnki && (hasRichEntry || fallbackTranslation) && !isLoading && (
+              {!ankiInHeader && canAddToAnki && (
                 <button
                   data-testid="add-to-anki-btn"
-                  onClick={async () => {
-                    if (ankiStatus === 'loading' || ankiStatus === 'done') return;
-                    setAnkiStatus('loading');
-                    try {
-                      await onAddToAnki();
-                      setAnkiStatus('done');
-                    } catch {
-                      setAnkiStatus('error');
-                    }
-                  }}
+                  onClick={() => void handleAddToAnki()}
                   disabled={ankiStatus === 'loading' || ankiStatus === 'done'}
                   className={`flex w-full items-center justify-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
                     ankiStatus === 'done'

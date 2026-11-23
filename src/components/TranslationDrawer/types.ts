@@ -87,6 +87,8 @@ export interface TranslationDrawerProps {
   onLookupWord?: (word: string) => void;
   /** Push a pure word card to the default Anki deck (single-word selections only). */
   onAddToAnki?: () => Promise<void>;
+  /** Show the Add to Anki button in the header instead of the body. */
+  ankiInHeader?: boolean;
   /** Push a cloze card — called with the word the user chose to blank (phrase selections only). */
   onAddCloze?: (blankWord: string) => Promise<void>;
   /** False when the sentence card is not a cloze: picking a word is then optional

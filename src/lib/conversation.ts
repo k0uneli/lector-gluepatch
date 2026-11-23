@@ -7,6 +7,7 @@ export const CONVERSATION_VOICE_KEY = 'lector-conversation-voice';
 export const CONVERSATION_AUTOPLAY_KEY = 'lector-conversation-autoplay';
 export const CONVERSATION_STOP_MODE_KEY = 'lector-conversation-stop-mode';
 export const CONVERSATION_PAUSE_KEY = 'lector-conversation-pause-seconds';
+export const CONVERSATION_CORRECTIONS_KEY = 'lector-conversation-corrections';
 // Mirrors the limits in api/src/lib/conversation.ts.
 export const CONVERSATION_DEFAULT_NEW_PERCENT = 3;
 export const CONVERSATION_MAX_NEW_PERCENT = 20;
@@ -22,6 +23,14 @@ export const CONVERSATION_PAUSE_STEP = 0.5;
 /** 'auto' ends a spoken turn at a pause; 'manual' waits for the stop button. */
 export type ConversationStopMode = 'auto' | 'manual';
 
+export interface TurnCorrection {
+  /** The turn with every fix applied; equal to the turn when it is right. */
+  corrected: string;
+  corrections: Array<{ original: string; corrected: string; explanation: string; type: string }>;
+  /** A longer English explanation; empty when there are no mistakes. */
+  explanation: string;
+}
+
 export interface ConversationMessage {
   idx: number;
   role: 'user' | 'assistant';
@@ -32,6 +41,8 @@ export interface ConversationMessage {
   newWords: string[];
   /** The learner's own recording of the turn. */
   hasAudio: boolean;
+  /** Learner turns checked while corrections were on. */
+  correction: TurnCorrection | null;
   createdAt: string;
 }
 
@@ -94,6 +105,10 @@ export function getConversationAutoplay(): boolean {
 
 export function getConversationStopMode(): ConversationStopMode {
   return read(CONVERSATION_STOP_MODE_KEY) === 'manual' ? 'manual' : 'auto';
+}
+
+export function getConversationCorrections(): boolean {
+  return read(CONVERSATION_CORRECTIONS_KEY) === 'true';
 }
 
 export function getConversationPauseSeconds(): number {
@@ -160,10 +175,12 @@ export async function sendTurn(
   text: string,
   newPercent: number,
   recording: Blob | null,
+  correct = false,
 ): Promise<ConversationMessage[]> {
   const form = new FormData();
   form.append('text', text);
   form.append('newPercent', String(newPercent));
+  if (correct) form.append('correct', '1');
   if (recording) form.append('audio', recording, 'turn.wav');
   const result = await call<{ messages: ConversationMessage[] }>(
     `/chats/${id}/turns`,
@@ -171,6 +188,16 @@ export async function sendTurn(
     'Could not get a reply',
   );
   return result.messages;
+}
+
+/** Checks one of the learner's turns for mistakes; returns the updated message. */
+export async function checkTurn(id: string, idx: number): Promise<ConversationMessage> {
+  const result = await call<{ message: ConversationMessage }>(
+    `/chats/${id}/messages/${idx}/correction`,
+    { method: 'POST' },
+    'Could not check this turn',
+  );
+  return result.message;
 }
 
 export async function retryReply(id: string, newPercent: number): Promise<ConversationMessage[]> {

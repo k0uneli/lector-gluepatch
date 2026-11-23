@@ -172,3 +172,73 @@ export function meterFor(
   meters.set(key, { size: known.length, at: now, meter });
   return meter;
 }
+
+export interface TurnCorrection {
+  /** The learner's turn with every fix applied. Equal to the turn when it is right. */
+  corrected: string;
+  corrections: Array<{ original: string; corrected: string; explanation: string; type: string }>;
+  /** A longer English explanation of the mistakes, for the expanded view. */
+  explanation: string;
+}
+
+export function buildCorrectionPrompt(opts: {
+  languageName: string;
+  text: string;
+  previous: string | null;
+  spoken: boolean;
+}): string {
+  const source = opts.spoken
+    ? 'The turn is a speech-recognition transcript. Ignore punctuation and capital letters, and do not count a likely mis-hearing as the learner’s mistake; mention it in the explanation instead.'
+    : 'The learner typed the turn.';
+  const context = opts.previous
+    ? `\nThe conversation partner had just said:\n${opts.previous}\n`
+    : '';
+  return `You are a ${opts.languageName} tutor. An English speaker learning ${opts.languageName} said this turn in a conversation. ${source}
+${context}
+Learner's turn:
+${opts.text}
+
+Find grammar mistakes (case, agreement, verb form, tense, aspect, word order), wrong or unnatural words, and missing or extra words. Do not rewrite a turn that is correct, and do not change its meaning or style.
+
+"corrected" is the turn with the fewest changes that fix it. When it is already right, repeat it unchanged.
+"corrections" lists each change: the exact original words, the corrected words, a one-sentence English explanation, and a type (grammar, spelling, word_choice, word_order, missing_word or extra_word).
+"explanation" is a fuller English explanation for the learner: what each mistake was, the rule behind it, and a short example. Leave it empty when there are no mistakes.
+
+Respond with ONLY a JSON object in this exact format (no markdown, no code blocks):
+{"corrected": "...", "corrections": [{"original": "...", "corrected": "...", "explanation": "...", "type": "grammar"}], "explanation": "..."}`;
+}
+
+/** Null when the model's answer is unusable. */
+export async function correctLearnerTurn(
+  provider: LLMProvider,
+  opts: Parameters<typeof buildCorrectionPrompt>[0],
+): Promise<TurnCorrection | null> {
+  const result = await completeJson<Record<string, unknown>>(provider, {
+    messages: [{ role: 'user', content: buildCorrectionPrompt(opts) }],
+    maxTokens: 2048,
+  });
+  if (typeof result.corrected !== 'string' || !result.corrected.trim()) return null;
+  const corrections = Array.isArray(result.corrections)
+    ? result.corrections.flatMap((c) => {
+        const { original, corrected, explanation, type } = (c ?? {}) as Record<string, unknown>;
+        return typeof original === 'string' && typeof corrected === 'string'
+          ? [
+              {
+                original,
+                corrected,
+                explanation: typeof explanation === 'string' ? explanation : '',
+                type: typeof type === 'string' ? type : 'grammar',
+              },
+            ]
+          : [];
+      })
+    : [];
+  return {
+    corrected: result.corrected.trim(),
+    corrections,
+    explanation:
+      corrections.length > 0 && typeof result.explanation === 'string'
+        ? result.explanation.trim()
+        : '',
+  };
+}
