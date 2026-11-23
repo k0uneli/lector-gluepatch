@@ -1,4 +1,4 @@
-import { test, expect, Page, Route } from '@playwright/test';
+import { test, expect, Page, Route, WebSocket } from '@playwright/test';
 import {
   clearRecognizer,
   FAKE_MICROPHONE,
@@ -8,30 +8,59 @@ import {
 } from './stt-helpers';
 
 /**
- * The Conversation tab. /api/conversation/* is mocked because the e2e API has
- * no language model or voice engine; the server side is covered by
- * api/src/routes/conversation.test.ts. Speech input runs through the real
- * /api/stt/stream with a stub recognizer.
+ * The Conversation tab. /api/conversation/* is served by a stateful mock,
+ * because the e2e API has no language model or voice engine; the server side
+ * is covered by api/src/routes/conversation.test.ts. Speech input runs
+ * through the real /api/stt/stream with a stub recognizer.
  *
  * Covers:
  *   - Happy path: nav link, a topic, the opening reply, a typed turn, English
- *   - Replies are read aloud by the chosen engine; Voice off stops that
- *   - A spoken turn is sent when the recognizer finishes
- *   - A failed reply can be retried; the conversation survives a reload
- *   - New conversation clears it; no voice engine means text only
- *   - The settings panel stores the slider, the voice and auto-play
+ *   - Words in both kinds of bubble open the definition drawer
+ *   - Two spoken turns in a row, each uploaded with its recording; a reply's
+ *     audio that arrives after the microphone started never plays
+ *   - Press-to-stop mode and the two-minute stream
+ *   - Saved conversations: list, reopen, back, delete
+ *   - The stitched recording: build, update when stale, delete
+ *   - A failed reply can be retried; a browser conversation is imported
+ *   - The settings panel stores its choices
  */
 
 test.use(FAKE_MICROPHONE);
 
+interface Msg {
+  idx: number;
+  role: 'user' | 'assistant';
+  text: string;
+  translation: string | null;
+  newPercent: number | null;
+  newWords: string[];
+  hasAudio: boolean;
+  createdAt: string;
+}
+
+interface StoredChat {
+  chat: {
+    id: string;
+    topic: string;
+    preview: string;
+    messageCount: number;
+    createdAt: string;
+    updatedAt: string;
+    recording: { durationMs: number; messages: number } | null;
+  };
+  language: string;
+  messages: Msg[];
+}
+
 const REPLIES = [
-  { reply: 'Hallo! Hoe gaan dit?', translation: 'Hello! How are you?', newPercent: 0, newWords: [] },
+  { text: 'Hallo! Hoe gaan dit?', translation: 'Hello! How are you?', newPercent: 0, newWords: [] },
   {
-    reply: 'Lekker! Wat eet jy vandag?',
+    text: 'Lekker! Wat eet jy vandag?',
     translation: 'Nice! What are you eating today?',
     newPercent: 20,
     newWords: ['lekker'],
   },
+  { text: 'Baie goed.', translation: 'Very good.', newPercent: 0, newWords: [] },
 ];
 
 /** A short silent WAV, so the page has something it can play. */
@@ -55,16 +84,75 @@ function silentWav(): Buffer {
 
 interface MockOptions {
   configured?: boolean;
-  failFirst?: boolean;
+  failNextReply?: boolean;
+  speakDelayMs?: number;
+  chats?: StoredChat[];
 }
 
 async function mockConversation(page: Page, options: MockOptions = {}) {
-  const seen = { replies: [] as Array<Record<string, any>>, speaks: [] as Array<Record<string, any>> };
-  let fail = options.failFirst ?? false;
+  const chats = new Map<string, StoredChat>((options.chats ?? []).map((c) => [c.chat.id, c]));
+  const seen = {
+    creates: [] as Array<Record<string, unknown>>,
+    turns: [] as Array<{ text: string; hasAudio: boolean; newPercent: string }>,
+    speaks: [] as Array<Record<string, unknown>>,
+    imports: [] as Array<Record<string, unknown>>,
+    recordings: 0,
+  };
+  let failNext = options.failNextReply ?? false;
+  let replyCount = 0;
+  let nextId = 1;
+
+  const reply = (chat: StoredChat): Msg | null => {
+    if (failNext) {
+      failNext = false;
+      return null;
+    }
+    const r = REPLIES[Math.min(replyCount++, REPLIES.length - 1)];
+    return add(chat, {
+      role: 'assistant',
+      text: r.text,
+      translation: r.translation,
+      newPercent: r.newPercent,
+      newWords: r.newWords,
+      hasAudio: false,
+    });
+  };
+  const add = (chat: StoredChat, m: Omit<Msg, 'idx' | 'createdAt'>): Msg => {
+    const msg = { ...m, idx: chat.messages.length, createdAt: new Date().toISOString() };
+    chat.messages.push(msg);
+    chat.chat.messageCount = chat.messages.length;
+    chat.chat.preview = chat.messages[0].text;
+    chat.chat.updatedAt = new Date().toISOString();
+    return msg;
+  };
+  const newChat = (topic: string): StoredChat => {
+    const now = new Date().toISOString();
+    const id = `chat-${nextId++}`;
+    const chat: StoredChat = {
+      chat: {
+        id,
+        topic,
+        preview: '',
+        messageCount: 0,
+        createdAt: now,
+        updatedAt: now,
+        recording: null,
+      },
+      language: 'af',
+      messages: [],
+    };
+    chats.set(id, chat);
+    return chat;
+  };
+  const failure = (route: Route) =>
+    route.fulfill({ status: 502, json: { error: 'Could not get a reply.' } });
+
   await page.route('**/api/conversation/**', async (route: Route) => {
     const request = route.request();
-    const path = new URL(request.url()).pathname;
-    if (path.endsWith('/voices')) {
+    const path = new URL(request.url()).pathname.replace(/^.*\/api\/conversation/, '');
+    const method = request.method();
+
+    if (path === '/voices') {
       const configured = options.configured ?? true;
       await route.fulfill({
         json: {
@@ -78,22 +166,109 @@ async function mockConversation(page: Page, options: MockOptions = {}) {
       });
       return;
     }
-    if (path.endsWith('/speak')) {
+    if (path === '/speak') {
       seen.speaks.push(JSON.parse(request.postData() ?? '{}'));
+      if (options.speakDelayMs) await new Promise((r) => setTimeout(r, options.speakDelayMs));
       await route.fulfill({ body: silentWav(), contentType: 'audio/wav' });
       return;
     }
-    const body = JSON.parse(request.postData() ?? '{}');
-    seen.replies.push(body);
-    if (fail) {
-      fail = false;
-      await route.fulfill({ status: 502, json: { error: 'Could not get a reply.' } });
+    if (path === '/chats' && method === 'GET') {
+      const list = [...chats.values()]
+        .map((c) => c.chat)
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      await route.fulfill({ json: { chats: list } });
       return;
     }
-    const turn = REPLIES[Math.min(seen.replies.length - 1, REPLIES.length - 1)];
-    await route.fulfill({ json: turn });
+    if (path === '/chats' && method === 'POST') {
+      const body = JSON.parse(request.postData() ?? '{}');
+      seen.creates.push(body);
+      const chat = newChat(body.topic ?? '');
+      if (!reply(chat)) {
+        chats.delete(chat.chat.id);
+        await failure(route);
+        return;
+      }
+      await route.fulfill({ status: 201, json: chat });
+      return;
+    }
+    if (path === '/chats/import') {
+      const body = JSON.parse(request.postData() ?? '{}');
+      seen.imports.push(body);
+      const chat = newChat(body.topic ?? '');
+      for (const m of body.messages) {
+        add(chat, {
+          role: m.role,
+          text: m.text,
+          translation: m.translation ?? null,
+          newPercent: m.newPercent ?? null,
+          newWords: m.newWords ?? [],
+          hasAudio: false,
+        });
+      }
+      await route.fulfill({ status: 201, json: chat });
+      return;
+    }
+    const match = path.match(/^\/chats\/([^/]+)(\/.*)?$/);
+    const chat = match ? chats.get(match[1]) : undefined;
+    const rest = match?.[2] ?? '';
+    if (!chat) {
+      await route.fulfill({ status: 404, json: { error: 'Conversation not found' } });
+      return;
+    }
+    if (rest === '' && method === 'GET') {
+      await route.fulfill({ json: chat });
+    } else if (rest === '' && method === 'DELETE') {
+      chats.delete(chat.chat.id);
+      await route.fulfill({ json: { success: true } });
+    } else if (rest === '/turns') {
+      const raw = request.postDataBuffer()?.toString('latin1') ?? '';
+      const field = (name: string) =>
+        raw.match(new RegExp(`name="${name}"\\r\\n\\r\\n([\\s\\S]*?)\\r\\n--`))?.[1] ?? '';
+      const text = Buffer.from(field('text'), 'latin1').toString('utf8');
+      const hasAudio = raw.includes('name="audio"');
+      seen.turns.push({ text, hasAudio, newPercent: field('newPercent') });
+      const user = add(chat, {
+        role: 'user',
+        text,
+        translation: null,
+        newPercent: null,
+        newWords: [],
+        hasAudio,
+      });
+      const answer = reply(chat);
+      if (!answer) await failure(route);
+      else await route.fulfill({ json: { messages: [user, answer] } });
+    } else if (rest === '/reply') {
+      const answer = reply(chat);
+      if (!answer) await failure(route);
+      else await route.fulfill({ json: { messages: [answer] } });
+    } else if (rest === '/recording' && method === 'POST') {
+      seen.recordings++;
+      chat.chat.recording = { durationMs: 4200, messages: chat.messages.length };
+      await route.fulfill({ json: { recording: chat.chat.recording } });
+    } else if (rest === '/recording' && method === 'DELETE') {
+      chat.chat.recording = null;
+      await route.fulfill({ json: { success: true } });
+    } else {
+      await route.fulfill({ body: silentWav(), contentType: 'audio/wav' });
+    }
   });
-  return seen;
+  return { seen, chats };
+}
+
+async function mockLookup(page: Page) {
+  const looked: string[] = [];
+  await page.route('**/api/dictionary/lookup**', async (route) => {
+    const word = new URL(route.request().url()).searchParams.get('word') ?? '';
+    looked.push(word);
+    await route.fulfill({
+      json: { entry: { word, senses: [{ partOfSpeech: 'noun', gloss: `meaning of ${word}` }] } },
+    });
+  });
+  await page.route('**/api/dictionary/paradigm**', (route) =>
+    route.fulfill({ json: { paradigm: null } }),
+  );
+  return looked;
 }
 
 async function startConversation(page: Page, topic = '') {
@@ -101,22 +276,16 @@ async function startConversation(page: Page, topic = '') {
   await expect(page.getByTestId('conversation-intro')).toBeVisible();
   if (topic) await page.getByTestId('conversation-topic').fill(topic);
   await page.getByTestId('conversation-start').click();
-  await expect(page.getByTestId('conversation-reply').first()).toHaveText(REPLIES[0].reply);
+  await expect(page.getByTestId('conversation-reply').first()).toHaveText(REPLIES[0].text);
 }
 
 test.describe('Conversation', () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.addInitScript(() => {
-      if (!sessionStorage.getItem('conversation-test-init')) {
-        localStorage.removeItem('lector-conversation:af');
-        sessionStorage.setItem('conversation-test-init', '1');
-      }
-    });
   });
 
   test('happy path: open from the nav, start on a topic, reply by typing', async ({ page }) => {
-    const seen = await mockConversation(page, { configured: false });
+    const { seen } = await mockConversation(page, { configured: false });
     await page.goto('/practice');
     await page.locator('aside').getByRole('link', { name: 'Conversation' }).click();
     await expect(page).toHaveURL(/\/conversation$/);
@@ -124,19 +293,17 @@ test.describe('Conversation', () => {
 
     await page.getByTestId('conversation-topic').fill('food');
     await page.getByTestId('conversation-start').click();
-    await expect(page.getByTestId('conversation-reply').first()).toHaveText(REPLIES[0].reply);
-    expect(seen.replies[0]).toEqual({ history: [], newPercent: 3, topic: 'food' });
-    await expect(page.getByTestId('conversation-topic-label')).toHaveText('Topic: food');
+    await expect(page.getByTestId('conversation-reply').first()).toHaveText(REPLIES[0].text);
+    await expect(page).toHaveURL(/\/conversation\?c=chat-1$/);
+    expect(seen.creates).toEqual([{ topic: 'food', newPercent: 3 }]);
+    await expect(page.getByTestId('conversation-topic-label')).toContainText('Topic: food');
 
     await expect(page.getByTestId('conversation-send')).toBeDisabled();
     await page.getByTestId('conversation-input').fill('Goed dankie');
     await page.getByTestId('conversation-input').press('Enter');
-    await expect(page.getByTestId('conversation-user')).toHaveText('Goed dankie');
-    await expect(page.getByTestId('conversation-reply').nth(1)).toHaveText(REPLIES[1].reply);
-    expect(seen.replies[1].history).toEqual([
-      { role: 'assistant', text: REPLIES[0].reply },
-      { role: 'user', text: 'Goed dankie' },
-    ]);
+    await expect(page.getByTestId('conversation-user-text')).toHaveText('Goed dankie');
+    await expect(page.getByTestId('conversation-reply').nth(1)).toHaveText(REPLIES[1].text);
+    expect(seen.turns).toEqual([{ text: 'Goed dankie', hasAudio: false, newPercent: '3' }]);
 
     const second = page.getByTestId('conversation-partner').nth(1);
     await expect(second.getByTestId('conversation-new-percent')).toHaveText('20% new');
@@ -144,84 +311,229 @@ test.describe('Conversation', () => {
       'title',
       'New: lekker',
     );
-    await expect(second.getByTestId('conversation-translation')).toHaveCount(0);
     await second.getByTestId('conversation-toggle-translation').click();
     await expect(second.getByTestId('conversation-translation')).toHaveText(
       'Nice! What are you eating today?',
     );
-    await expect(page.getByTestId('conversation-play')).toHaveCount(0);
+    await expect(page.getByTestId('conversation-play-mine')).toHaveCount(0);
     expect(seen.speaks).toEqual([]);
   });
 
-  test('replies are read aloud by the chosen engine; Voice off stops that', async ({ page }) => {
-    const seen = await mockConversation(page);
+  test('words in both bubbles open the definition drawer', async ({ page }) => {
+    await mockConversation(page, { configured: false });
+    const looked = await mockLookup(page);
     await startConversation(page);
-    await expect.poll(() => seen.speaks).toEqual([{ text: REPLIES[0].reply, engine: 'google' }]);
-
-    await page.getByTestId('conversation-autoplay').click();
-    await expect(page.getByTestId('conversation-autoplay')).toHaveText('Voice off');
-    await page.getByTestId('conversation-input').fill('Goed');
+    await page.getByTestId('conversation-input').fill('Goed dankie');
     await page.getByTestId('conversation-send').click();
-    await expect(page.getByTestId('conversation-reply').nth(1)).toBeVisible();
-    expect(seen.speaks).toHaveLength(1);
+    await expect(page.getByTestId('conversation-reply')).toHaveCount(2);
 
-    await page.getByTestId('conversation-play').nth(1).click();
-    await expect.poll(() => seen.speaks.length).toBe(2);
-    expect(seen.speaks[1]).toEqual({ text: REPLIES[1].reply, engine: 'google' });
+    const drawer = page.getByTestId('translation-drawer');
+    await page
+      .getByTestId('conversation-reply')
+      .first()
+      .getByRole('button', { name: 'Look up Hoe' })
+      .click();
+    await expect(drawer).toContainText('meaning of Hoe');
+    await expect(page.getByTestId('conversation-reply').first()).toHaveText(REPLIES[0].text);
+
+    await page
+      .getByTestId('conversation-user-text')
+      .getByRole('button', { name: 'Look up dankie' })
+      .click();
+    await expect(drawer).toContainText('meaning of dankie');
+    expect(looked).toEqual(['Hoe', 'dankie']);
   });
 
-  test('a spoken turn is sent when the recognizer finishes', async ({ page }) => {
+  test('two spoken turns in a row are each sent with a recording', async ({ page }) => {
     test.skip(sttUnreachable, 'the containerised API cannot reach the host stub recognizer');
     const stub = await startRecognizerStub();
     try {
       await useRecognizer(page, stub.url);
-      const seen = await mockConversation(page, { configured: false });
+      const { seen } = await mockConversation(page, { speakDelayMs: 2_000 });
+      const sockets: string[] = [];
+      page.on('websocket', (ws: WebSocket) => sockets.push(ws.url()));
       await startConversation(page);
-      stub.say(['Goed', 'Goed dankie']);
-      await page.getByTestId('conversation-mic').click();
-      await expect(page.getByTestId('conversation-input')).toHaveValue(/Goed/, { timeout: 10000 });
-      await page.getByRole('button', { name: 'Stop listening' }).click();
-      await expect(page.getByTestId('conversation-user')).toHaveText('Goed dankie', {
-        timeout: 10000,
-      });
-      await expect.poll(() => seen.replies.length).toBe(2);
-      expect(seen.replies[1].history.at(-1)).toEqual({ role: 'user', text: 'Goed dankie' });
+
+      for (const [i, said] of ['Goed dankie', 'Ek eet brood'].entries()) {
+        stub.say([said]);
+        await expect(page.getByTestId('conversation-mic')).toBeEnabled();
+        await page.getByTestId('conversation-mic').click();
+        await expect(page.getByTestId('conversation-input')).toHaveValue(said, { timeout: 10000 });
+        await page.getByRole('button', { name: 'Stop listening' }).click();
+        await expect(page.getByTestId('conversation-user-text').nth(i)).toHaveText(said, {
+          timeout: 10000,
+        });
+        await expect(page.getByTestId('conversation-reply')).toHaveCount(i + 2);
+      }
+      expect(seen.turns).toEqual([
+        { text: 'Goed dankie', hasAudio: true, newPercent: '3' },
+        { text: 'Ek eet brood', hasAudio: true, newPercent: '3' },
+      ]);
+      const speechSockets = sockets.filter((url) => url.includes('/api/stt/stream'));
+      expect(speechSockets).toHaveLength(2);
+      expect(speechSockets.every((url) => url.includes('maxSeconds=120'))).toBe(true);
+      await expect(page.getByTestId('conversation-play-mine')).toHaveCount(2);
     } finally {
       await clearRecognizer(page);
       await stub.close();
     }
   });
 
-  test('a failed reply can be retried, and the conversation survives a reload', async ({
-    page,
-  }) => {
+  test('a reply still loading never plays over the microphone', async ({ page }) => {
+    test.skip(sttUnreachable, 'the containerised API cannot reach the host stub recognizer');
+    const stub = await startRecognizerStub();
+    try {
+      await useRecognizer(page, stub.url);
+      const { seen } = await mockConversation(page, { speakDelayMs: 2_500 });
+      await startConversation(page);
+      await expect.poll(() => seen.speaks.length).toBe(1);
+
+      stub.say(['Goed']);
+      await page.getByTestId('conversation-mic').click();
+      await expect(page.getByRole('button', { name: 'Stop listening' })).toBeVisible();
+      await page.waitForTimeout(3_000);
+      await expect(page.getByTestId('conversation-play').first()).toHaveText('Play');
+      const paused = await page.evaluate(() =>
+        [...document.querySelectorAll('audio')].every((a) => a.paused),
+      );
+      expect(paused).toBe(true);
+      await page.getByRole('button', { name: 'Stop listening' }).click();
+      await expect(page.getByTestId('conversation-user-text')).toHaveText('Goed', {
+        timeout: 10000,
+      });
+    } finally {
+      await clearRecognizer(page);
+      await stub.close();
+    }
+  });
+
+  test('press-to-stop mode keeps listening until the stop button', async ({ page }) => {
+    test.skip(sttUnreachable, 'the containerised API cannot reach the host stub recognizer');
+    const stub = await startRecognizerStub();
+    try {
+      await useRecognizer(page, stub.url);
+      await page.addInitScript(() =>
+        localStorage.setItem('lector-conversation-stop-mode', 'manual'),
+      );
+      await mockConversation(page, { configured: false });
+      await startConversation(page);
+      stub.say(['Goed dankie']);
+      await page.getByTestId('conversation-mic').click();
+      await expect(page.getByTestId('conversation-input')).toHaveAttribute(
+        'placeholder',
+        'Listening… press stop when you finish',
+      );
+      await page.waitForTimeout(4_000);
+      await expect(page.getByRole('button', { name: 'Stop listening' })).toBeVisible();
+      await page.getByRole('button', { name: 'Stop listening' }).click();
+      await expect(page.getByTestId('conversation-user-text')).toHaveText('Goed dankie', {
+        timeout: 10000,
+      });
+    } finally {
+      await clearRecognizer(page);
+      await stub.close();
+    }
+  });
+
+  test('saved conversations can be reopened and deleted', async ({ page }) => {
+    await mockConversation(page, { configured: false });
+    await startConversation(page, 'weather');
+    await page.getByTestId('conversation-input').fill('Goed');
+    await page.getByTestId('conversation-send').click();
+    await expect(page.getByTestId('conversation-reply')).toHaveCount(2);
+
+    await page.getByTestId('conversation-back').click();
+    await expect(page).toHaveURL(/\/conversation$/);
+    const item = page.getByTestId('conversation-history-item');
+    await expect(item).toHaveCount(1);
+    await expect(item).toContainText('weather');
+    await expect(item).toContainText('3 messages');
+
+    await page.getByTestId('conversation-history-open').click();
+    await expect(page).toHaveURL(/\?c=chat-1$/);
+    await expect(page.getByTestId('conversation-user-text')).toHaveText('Goed');
+    await page.goBack();
+    await expect(page.getByTestId('conversation-intro')).toBeVisible();
+
+    await page.getByTestId('conversation-history-delete').click();
+    await page.getByTestId('conversation-history-confirm-delete').click();
+    await expect(page.getByTestId('conversation-history-item')).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByTestId('conversation-history')).toHaveCount(0);
+  });
+
+  test('the whole conversation can be stitched, updated and deleted', async ({ page }) => {
+    const { seen } = await mockConversation(page);
+    await page.addInitScript(() => localStorage.setItem('lector-conversation-autoplay', 'false'));
+    await startConversation(page);
+
+    await page.getByTestId('conversation-recording-build').click();
+    await expect(page.getByTestId('conversation-recording-audio')).toBeVisible();
+    await expect(page.getByTestId('conversation-recording')).toContainText('4 s');
+    expect(seen.recordings).toBe(1);
+
+    await page.getByTestId('conversation-input').fill('Goed');
+    await page.getByTestId('conversation-send').click();
+    await expect(page.getByTestId('conversation-reply')).toHaveCount(2);
+    await expect(page.getByTestId('conversation-recording')).toContainText(
+      'covers 1 of 3 messages',
+    );
+    await page.getByTestId('conversation-recording-update').click();
+    await expect(page.getByTestId('conversation-recording-update')).toHaveCount(0);
+    expect(seen.recordings).toBe(2);
+
+    await page.getByTestId('conversation-recording-delete').click();
+    await page.getByTestId('conversation-recording-confirm-delete').click();
+    await expect(page.getByTestId('conversation-recording')).toHaveCount(0);
+    await expect(page.getByTestId('conversation-recording-build')).toBeVisible();
+  });
+
+  test('without a voice engine the recording cannot be built', async ({ page }) => {
     await mockConversation(page, { configured: false });
     await startConversation(page);
+    await expect(page.getByTestId('conversation-recording-build')).toBeDisabled();
+  });
+
+  test('a failed reply can be retried, and survives a reload', async ({ page }) => {
+    const mock = await mockConversation(page, { configured: false });
+    await startConversation(page);
     await page.unroute('**/api/conversation/**');
-    await mockConversation(page, { configured: false, failFirst: true });
+    await mockConversation(page, {
+      configured: false,
+      failNextReply: true,
+      chats: [...mock.chats.values()],
+    });
 
     await page.getByTestId('conversation-input').fill('Goed');
     await page.getByTestId('conversation-send').click();
     await expect(page.getByTestId('conversation-error')).toHaveText('Could not get a reply.');
+    await expect(page.getByTestId('conversation-user-text')).toHaveText('Goed');
+    await expect(page.getByTestId('conversation-send')).toBeDisabled();
     await page.getByTestId('conversation-retry').click();
     await expect(page.getByTestId('conversation-reply')).toHaveCount(2);
     await expect(page.getByTestId('conversation-error')).toHaveCount(0);
 
     await page.reload();
     await expect(page.getByTestId('conversation-reply')).toHaveCount(2);
-    await expect(page.getByTestId('conversation-user')).toHaveText('Goed');
   });
 
-  test('New conversation clears it', async ({ page }) => {
-    await mockConversation(page, { configured: false });
-    await startConversation(page);
-    await page.getByTestId('conversation-new').click();
-    await expect(page.getByTestId('conversation-intro')).toBeVisible();
-    await page.reload();
-    await expect(page.getByTestId('conversation-intro')).toBeVisible();
+  test('a conversation kept in this browser is saved to the server', async ({ page }) => {
+    await page.addInitScript(() => {
+      if (sessionStorage.getItem('seeded')) return;
+      sessionStorage.setItem('seeded', '1');
+      localStorage.setItem(
+        'lector-conversation:af',
+        JSON.stringify({ topic: 'old', messages: [{ role: 'assistant', text: 'Hallo daar' }] }),
+      );
+    });
+    const { seen } = await mockConversation(page, { configured: false });
+    await page.goto('/conversation');
+    await expect(page.getByTestId('conversation-history-item')).toContainText('old');
+    expect(seen.imports).toHaveLength(1);
+    expect(await page.evaluate(() => localStorage.getItem('lector-conversation:af'))).toBeNull();
   });
 
-  test('the settings panel stores the slider, the voice and auto-play', async ({ page }) => {
+  test('the settings panel stores its choices', async ({ page }) => {
     await mockConversation(page);
     await page.goto('/settings');
     const panel = page.getByTestId('conversation-settings');
@@ -232,21 +544,28 @@ test.describe('Conversation', () => {
     await expect(panel.getByTestId('conversation-new-percent-value')).toHaveText('up to 5%');
     await expect(panel.getByTestId('conversation-voice-google')).toBeChecked();
     await expect(panel.getByTestId('conversation-voice-local')).toBeDisabled();
-    await expect(panel).toContainText('Set PODCAST_TTS_URL on the server');
     await panel.getByTestId('conversation-autoplay-setting').uncheck();
+    await expect(panel.getByTestId('conversation-pause-value')).toHaveText('2.5 s');
+    await panel.getByTestId('conversation-pause-slider').getByRole('slider').focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(panel.getByTestId('conversation-pause-value')).toHaveText('3 s');
+    await panel.getByTestId('conversation-stop-manual').click();
+    await expect(panel.getByTestId('conversation-pause-slider')).toHaveCount(0);
     expect(
       await page.evaluate(() => [
         localStorage.getItem('lector-conversation-new-percent'),
         localStorage.getItem('lector-conversation-autoplay'),
+        localStorage.getItem('lector-conversation-stop-mode'),
+        localStorage.getItem('lector-conversation-pause-seconds'),
       ]),
-    ).toEqual(['5', 'false']);
+    ).toEqual(['5', 'false', 'manual', '3']);
 
-    const seen = await mockConversation(page);
+    const { seen } = await mockConversation(page);
     await page.goto('/conversation');
     await expect(page.getByTestId('conversation-intro')).toContainText('up to 5% new words');
     await page.getByTestId('conversation-start').click();
     await expect(page.getByTestId('conversation-reply').first()).toBeVisible();
-    expect(seen.replies.at(-1)?.newPercent).toBe(5);
+    expect(seen.creates.at(-1)?.newPercent).toBe(5);
     expect(seen.speaks).toEqual([]);
   });
 

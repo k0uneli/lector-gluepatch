@@ -42,6 +42,7 @@
 import { db } from '../db';
 import { TENANT_TABLES } from './adopt-local-data';
 import { deleteAudioFile } from './audio-files';
+import { chatIdsFor, removeChatFiles } from './conversation-store';
 
 export const ERASURE_TABLES = [
   ...TENANT_TABLES,
@@ -86,6 +87,7 @@ export function purgeTenantData(userId: string, email?: string): void {
       .prepare('SELECT audioPath FROM lessons WHERE userId = ? AND audioPath IS NOT NULL')
       .all(userId) as { audioPath: string }[]
   ).map((r) => r.audioPath);
+  const chatIds = present.has('conversations') ? chatIdsFor(userId) : [];
 
   const run = db.transaction(() => {
     // Capture the Paddle customer ids linked to this tenant BEFORE deleting the
@@ -115,4 +117,5 @@ export function purgeTenantData(userId: string, email?: string): void {
   });
   run();
   for (const audioPath of audioPaths) deleteAudioFile(audioPath);
+  for (const id of chatIds) removeChatFiles(id);
 }

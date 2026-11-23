@@ -339,8 +339,8 @@
   N("flow:conversation", "flow", "Conversation", {
     domain: "tutor",
     md: "tutor.md#conversation",
-    summary: "Spoken or typed chat with an AI partner held to the learner's words. Replies are measured, rewritten once when over the new-word limit, and read aloud by a podcast engine.",
-    steps: ["file:conversation-page", "fn:startRecognition", "route:stt-stream", "route:conversation-reply", "fn:buildConversationReply", "fn:getProvider", "table:knownWords", "route:conversation-speak", "fn:createPodcastVoice"],
+    summary: "Saved spoken or typed chats with an AI partner held to the learner's words. Turns keep their recordings; the whole chat can be stitched into one MP3.",
+    steps: ["file:conversation-page", "fn:startRecognition", "route:stt-stream", "route:conversation-turns", "fn:buildConversationReply", "fn:getProvider", "table:conversations", "route:conversation-recording", "fn:createPodcastVoice"],
   });
   N("flow:tutor-chat", "flow", "Tutor chat", {
     domain: "tutor",
@@ -806,7 +806,9 @@
   N("route:forms-answer", "route", "POST /api/forms/answer", { path: "api/src/routes/forms.ts" });
   N("fn:buildFormsRound", "fn", "buildFormsRound", { path: "api/src/lib/forms-drill.ts" });
   N("file:forms-practice", "file", "FormsPractice", { path: "src/app/practice/components/Forms/index.tsx", domain: "practice" });
-  N("route:conversation-reply", "route", "POST /api/conversation/reply", { path: "api/src/routes/conversation.ts" });
+  N("route:conversation-turns", "route", "POST /api/conversation/chats/:id/turns", { path: "api/src/routes/conversation.ts" });
+  N("route:conversation-recording", "route", "POST /api/conversation/chats/:id/recording", { path: "api/src/routes/conversation.ts" });
+  N("fn:buildRecording", "fn", "buildRecording", { path: "api/src/lib/conversation-store.ts" });
   N("route:conversation-speak", "route", "POST /api/conversation/speak", { path: "api/src/routes/conversation.ts" });
   N("fn:buildConversationReply", "fn", "buildConversationReply", { path: "api/src/lib/conversation.ts" });
   N("file:conversation-page", "file", "Conversation page", { path: "src/app/conversation/page.tsx", domain: "tutor" });
@@ -879,6 +881,7 @@
   N("table:dailyStats", "table", "dailyStats", { path: "api/src/db.ts" });
   N("table:recall_items", "table", "recall_items", { path: "api/src/db.ts" });
   N("table:reading_challenges", "table", "reading_challenges", { path: "api/src/db.ts" });
+  N("table:conversations", "table", "conversations", { path: "api/src/db.ts" });
   N("table:anki_pending", "table", "anki_pending", { path: "api/src/db.ts" });
   N("table:transcript_segments", "table", "transcript_segments", { path: "api/src/db.ts" });
   N("table:podcast_episodes", "table", "podcast_episodes", { path: "api/src/db.ts" });
@@ -1269,11 +1272,16 @@
   edge("route:forms-answer", "table:dailyStats", "writes");
   edge("flow:conversation", "file:conversation-page", "starts");
   edge("file:conversation-page", "fn:startRecognition", "calls");
-  edge("file:conversation-page", "route:conversation-reply", "http");
+  edge("file:conversation-page", "route:conversation-turns", "http");
+  edge("file:conversation-page", "route:conversation-recording", "http");
+  edge("file:conversation-page", "file:translation-drawer", "renders");
+  edge("route:conversation-turns", "table:conversations", "writes");
+  edge("route:conversation-recording", "fn:buildRecording", "calls");
+  edge("fn:buildRecording", "fn:createPodcastVoice", "calls");
   edge("file:conversation-page", "route:conversation-speak", "http");
-  edge("route:conversation-reply", "fn:buildConversationReply", "calls");
+  edge("route:conversation-turns", "fn:buildConversationReply", "calls");
   edge("fn:buildConversationReply", "fn:getProvider", "calls");
-  edge("route:conversation-reply", "table:knownWords", "reads");
+  edge("route:conversation-turns", "table:knownWords", "reads");
   edge("route:conversation-speak", "fn:createPodcastVoice", "calls");
   edge("file:reading-page", "route:reading-today", "http");
   edge("route:reading-today", "table:knownWords", "reads");

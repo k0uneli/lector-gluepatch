@@ -1,5 +1,13 @@
 import { apiBase, apiFetch } from '@/lib/api-base';
-import { Downsampler, Endpointer, floatTo16BitPCM, rms, STT_SAMPLE_RATE } from './audio';
+import {
+  DEFAULT_ENDPOINTING,
+  Downsampler,
+  Endpointer,
+  floatTo16BitPCM,
+  rms,
+  STT_SAMPLE_RATE,
+  type EndpointerOptions,
+} from './audio';
 
 export interface SttStatus {
   source: 'asr' | 'custom';
@@ -17,6 +25,15 @@ export interface RecognitionHandlers {
   /** Capture stopped, by `stop()` or by the endpointer. The final transcript follows. */
   onCaptureEnd(): void;
   onLevel?(level: number): void;
+}
+
+export interface RecognitionOptions {
+  /** 'manual' records until `stop()` (or `maxSeconds`); otherwise a pause ends it. */
+  endpointing?: Partial<EndpointerOptions> | 'manual';
+  /** Upper bound the server honours, up to 120. Defaults to the server's 30. */
+  maxSeconds?: number;
+  /** Every captured 16 kHz PCM chunk, for keeping a copy of the recording. */
+  onAudio?(pcm: Int16Array): void;
 }
 
 export interface Recognition {
@@ -57,10 +74,16 @@ export function isVoiceInputSupported(): boolean {
   );
 }
 
-export function sttStreamUrl(language: string, base = apiBase(), page = window.location.href) {
+export function sttStreamUrl(
+  language: string,
+  base = apiBase(),
+  page = window.location.href,
+  maxSeconds?: number,
+) {
   const url = new URL(`${base}/api/stt/stream`, page);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   url.searchParams.set('language', language);
+  if (maxSeconds) url.searchParams.set('maxSeconds', String(maxSeconds));
   return url.toString();
 }
 
@@ -83,13 +106,16 @@ function microphoneError(err: unknown): string {
 export async function startRecognition(
   language: string,
   handlers: RecognitionHandlers,
+  options: RecognitionOptions = {},
 ): Promise<Recognition> {
   let stopped = false;
   let settled = false;
   let release = () => {};
   const pending: ArrayBuffer[] = [];
 
-  const socket = new WebSocket(sttStreamUrl(language));
+  const socket = new WebSocket(
+    sttStreamUrl(language, undefined, undefined, options.maxSeconds),
+  );
   socket.binaryType = 'arraybuffer';
 
   const settle = () => {
@@ -164,7 +190,12 @@ export async function startRecognition(
   const source = context.createMediaStreamSource(stream);
   const node = new AudioWorkletNode(context, WORKLET_NAME);
   const downsampler = new Downsampler(context.sampleRate);
-  const endpointer = new Endpointer();
+  const maxMs = options.maxSeconds ? options.maxSeconds * 1000 : DEFAULT_ENDPOINTING.maxMs;
+  const endpointer = new Endpointer(
+    options.endpointing === 'manual'
+      ? { ...DEFAULT_ENDPOINTING, silenceMs: Infinity, noSpeechMs: Infinity, maxMs }
+      : { ...DEFAULT_ENDPOINTING, maxMs, ...options.endpointing },
+  );
   let batch: Int16Array[] = [];
   let batchSamples = 0;
 
@@ -214,6 +245,7 @@ export async function startRecognition(
     const level = rms(frame);
     handlers.onLevel?.(level);
     const pcm = floatTo16BitPCM(downsampler.process(frame));
+    options.onAudio?.(pcm);
     batch.push(pcm);
     batchSamples += pcm.length;
     if (batchSamples >= SEND_SAMPLES) flush();

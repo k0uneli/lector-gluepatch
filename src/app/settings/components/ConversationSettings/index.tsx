@@ -1,18 +1,27 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { lectorMode } from '@/lib/api-base';
 import {
   CONVERSATION_AUTOPLAY_KEY,
   CONVERSATION_MAX_NEW_PERCENT,
+  CONVERSATION_MAX_PAUSE_SECONDS,
+  CONVERSATION_MIN_PAUSE_SECONDS,
   CONVERSATION_NEW_PERCENT_KEY,
+  CONVERSATION_PAUSE_KEY,
+  CONVERSATION_PAUSE_STEP,
+  CONVERSATION_STOP_MODE_KEY,
   CONVERSATION_VOICE_KEY,
   fetchConversationVoices,
   getConversationAutoplay,
   getConversationNewPercent,
+  getConversationPauseSeconds,
+  getConversationStopMode,
   pickEngine,
   type ConversationVoices,
+  type ConversationStopMode,
 } from '@/lib/conversation';
 import { PODCAST_ENGINE_LABELS, PODCAST_ENGINES, type PodcastEngineId } from '@/lib/podcast';
 
@@ -21,6 +30,8 @@ const first = (value: number | readonly number[]) => (Array.isArray(value) ? val
 export default function ConversationSettings() {
   const [newPercent, setNewPercent] = useState<number | null>(null);
   const [autoplay, setAutoplay] = useState(true);
+  const [stopMode, setStopMode] = useState<ConversationStopMode>('auto');
+  const [pauseSeconds, setPauseSeconds] = useState(2.5);
   const [voices, setVoices] = useState<ConversationVoices | null>(null);
   const [engine, setEngine] = useState<PodcastEngineId | null>(null);
 
@@ -28,6 +39,8 @@ export default function ConversationSettings() {
     const load = () => {
       setNewPercent(getConversationNewPercent());
       setAutoplay(getConversationAutoplay());
+      setPauseSeconds(getConversationPauseSeconds());
+      setStopMode(getConversationStopMode());
     };
     load();
     let cancelled = false;
@@ -47,11 +60,7 @@ export default function ConversationSettings() {
   const engines = PODCAST_ENGINES.filter((id) => lectorMode() === 'selfhost' || id === 'google');
 
   return (
-    <section
-      id="conversation"
-      className="panel space-y-6 p-6"
-      data-testid="conversation-settings"
-    >
+    <section id="conversation" className="panel space-y-6 p-6" data-testid="conversation-settings">
       <div>
         <h2 className="text-lg font-semibold text-foreground">Conversation</h2>
         <p className="text-sm text-muted-foreground">
@@ -61,7 +70,10 @@ export default function ConversationSettings() {
 
       <div>
         <div className="flex items-baseline justify-between">
-          <label id="conversation-new-percent-label" className="text-sm font-medium text-foreground">
+          <label
+            id="conversation-new-percent-label"
+            className="text-sm font-medium text-foreground"
+          >
             New vocabulary
           </label>
           <span
@@ -120,8 +132,8 @@ export default function ConversationSettings() {
           );
         })}
         <p className="text-xs text-muted-foreground">
-          The voices are the ones the Podcast settings use, for example the Chirp voice for
-          Google or the voice that PODCAST_TTS_VOICE names for a local server such as Chatterbox.
+          The voices are the ones the Podcast settings use, for example the Chirp voice for Google
+          or the voice that PODCAST_TTS_VOICE names for a local server such as Chatterbox.
         </p>
       </fieldset>
 
@@ -138,6 +150,71 @@ export default function ConversationSettings() {
         />
         Read each reply aloud as it arrives
       </label>
+
+      {lectorMode() === 'selfhost' && (
+        <div>
+          <p className="text-sm font-medium text-foreground">End of a spoken reply</p>
+          <p className="mb-2 text-xs text-muted-foreground">
+            Stop automatically when you pause, or keep recording until you press stop. A turn can be
+            up to two minutes long either way.
+          </p>
+          <div className="flex gap-2">
+            {(
+              [
+                ['auto', 'Stop when I pause'],
+                ['manual', 'I press stop'],
+              ] as const
+            ).map(([mode, label]) => (
+              <Button
+                key={mode}
+                variant={stopMode === mode ? 'default' : 'secondary'}
+                onClick={() => {
+                  setStopMode(mode);
+                  localStorage.setItem(CONVERSATION_STOP_MODE_KEY, mode);
+                }}
+                data-testid={`conversation-stop-${mode}`}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+          {stopMode === 'auto' && (
+            <div className="mt-4">
+              <div className="flex items-baseline justify-between">
+                <label
+                  id="conversation-pause-label"
+                  className="text-sm font-medium text-foreground"
+                >
+                  Pause length
+                </label>
+                <span
+                  className="text-sm text-muted-foreground"
+                  data-testid="conversation-pause-value"
+                >
+                  {pauseSeconds} s
+                </span>
+              </div>
+              <p className="mb-3 text-xs text-muted-foreground">
+                How long you can stay silent before the recording stops. Raise it if it cuts you off
+                while you think.
+              </p>
+              <Slider
+                value={[pauseSeconds]}
+                min={CONVERSATION_MIN_PAUSE_SECONDS}
+                max={CONVERSATION_MAX_PAUSE_SECONDS}
+                step={CONVERSATION_PAUSE_STEP}
+                aria-labelledby="conversation-pause-label"
+                data-testid="conversation-pause-slider"
+                onValueChange={(value) => {
+                  const next = first(value);
+                  setPauseSeconds(next);
+                  localStorage.setItem(CONVERSATION_PAUSE_KEY, String(next));
+                }}
+              />
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }

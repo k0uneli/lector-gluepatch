@@ -80,6 +80,9 @@ export const TENANT_TABLES = [
   'podcast_shows',
   'podcast_episodes',
   'podcast_feed_tokens',
+  // Saved conversations; their audio lives under DATA_DIR/conversations.
+  'conversations',
+  'conversation_messages',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];

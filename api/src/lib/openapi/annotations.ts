@@ -3116,7 +3116,52 @@ const internalOps: Record<string, OperationDoc> = {
     summary: 'List the voices that can read conversation replies',
     tag: 'Practice',
   },
-  'POST /api/conversation/reply': { summary: 'Get the conversation partner’s reply', tag: 'Practice' },
+  'GET /api/conversation/chats': { summary: 'List saved conversations', tag: 'Practice' },
+  'POST /api/conversation/chats': { summary: 'Start a conversation', tag: 'Practice' },
+  'POST /api/conversation/chats/import': {
+    summary: 'Save a conversation kept in the browser',
+    tag: 'Practice',
+  },
+  'GET /api/conversation/chats/{id}': {
+    summary: 'Get a conversation',
+    tag: 'Practice',
+    pathParams: { id: 'Conversation id.' },
+  },
+  'DELETE /api/conversation/chats/{id}': {
+    summary: 'Delete a conversation and its audio',
+    tag: 'Practice',
+    pathParams: { id: 'Conversation id.' },
+  },
+  'POST /api/conversation/chats/{id}/turns': {
+    summary: 'Send a turn and get the reply',
+    tag: 'Practice',
+    pathParams: { id: 'Conversation id.' },
+  },
+  'POST /api/conversation/chats/{id}/reply': {
+    summary: 'Retry the reply to the last turn',
+    tag: 'Practice',
+    pathParams: { id: 'Conversation id.' },
+  },
+  'GET /api/conversation/chats/{id}/messages/{idx}/audio': {
+    summary: 'Get the recording of a spoken turn',
+    tag: 'Practice',
+    pathParams: { id: 'Conversation id.', idx: 'Message index.' },
+  },
+  'POST /api/conversation/chats/{id}/recording': {
+    summary: 'Stitch the conversation into one recording',
+    tag: 'Practice',
+    pathParams: { id: 'Conversation id.' },
+  },
+  'GET /api/conversation/chats/{id}/recording': {
+    summary: 'Get the stitched recording',
+    tag: 'Practice',
+    pathParams: { id: 'Conversation id.' },
+  },
+  'DELETE /api/conversation/chats/{id}/recording': {
+    summary: 'Delete the stitched recording',
+    tag: 'Practice',
+    pathParams: { id: 'Conversation id.' },
+  },
   'POST /api/conversation/speak': { summary: 'Read a conversation reply aloud', tag: 'Practice' },
 
   'POST /api/tokens': { summary: 'Create a personal access token', tag: 'Settings' },

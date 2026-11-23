@@ -1,7 +1,9 @@
 import '../test-guard';
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { db, getDatabaseInstance } from '../db';
+import fs from 'fs';
 import { ERASURE_TABLES, purgeTenantData } from './account-deletion';
+import { chatDir, removeChatFiles } from './conversation-store';
 
 /**
  * Right-to-erasure (#227): purgeTenantData must wipe EVERY userId-scoped table
@@ -179,6 +181,26 @@ describe('purgeTenantData', () => {
 
     expect(rowsFor('user_provider_credentials', USER_A)).toBe(0);
     expect(rowsFor('cached_entries', USER_A)).toBe(0);
+  });
+
+  test('removes the target user’s conversation audio folders only', () => {
+    const now = new Date().toISOString();
+    const insert = db.prepare(
+      `INSERT INTO conversations (id, userId, language, topic, createdAt, updatedAt)
+       VALUES (?, ?, 'ru', '', ?, ?)`,
+    );
+    insert.run('chat-erase-a', USER_A, now, now);
+    insert.run('chat-erase-b', USER_B, now, now);
+    for (const id of ['chat-erase-a', 'chat-erase-b']) {
+      fs.mkdirSync(chatDir(id), { recursive: true });
+      fs.writeFileSync(`${chatDir(id)}/turn.mp3`, 'x');
+    }
+
+    purgeTenantData(USER_A, EMAIL_A);
+
+    expect(fs.existsSync(chatDir('chat-erase-a'))).toBe(false);
+    expect(fs.existsSync(chatDir('chat-erase-b'))).toBe(true);
+    removeChatFiles('chat-erase-b');
   });
 
   test('drops the Paddle customer mirror for the target user only', () => {

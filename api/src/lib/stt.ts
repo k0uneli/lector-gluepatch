@@ -32,8 +32,10 @@ export type SttEmit = (message: SttServerMessage) => void;
 /** Mirrors STT_SAMPLE_RATE in src/lib/stt/audio.ts. */
 export const STT_SAMPLE_RATE = 16_000;
 const BYTES_PER_SECOND = STT_SAMPLE_RATE * 2;
-const MAX_SESSION_SECONDS = 30;
-const MAX_SESSION_BYTES = MAX_SESSION_SECONDS * BYTES_PER_SECOND;
+export const DEFAULT_SESSION_SECONDS = 30;
+/** The longest session a client may ask for, e.g. a conversation turn. */
+export const MAX_SESSION_SECONDS = 120;
+const DEFAULT_SESSION_BYTES = DEFAULT_SESSION_SECONDS * BYTES_PER_SECOND;
 
 const PARTIAL_INTERVAL_MS = 400;
 const MIN_NEW_PARTIAL_BYTES = BYTES_PER_SECOND / 4;
@@ -151,7 +153,11 @@ export const transcribeClip: ClipTranscriber = async (config, wav, language, sig
       method: 'POST',
       headers: authHeaders(config),
       body: form,
-      signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
+      // A long clip takes longer to transcribe: 250 ms more per second of audio.
+      signal: AbortSignal.any([
+        signal,
+        AbortSignal.timeout(REQUEST_TIMEOUT_MS + ((wav.byteLength - 44) / BYTES_PER_SECOND) * 250),
+      ]),
     });
   } catch (err) {
     if (signal.aborted) throw err;
@@ -202,6 +208,7 @@ export class HttpSttSession implements SttSession {
     private readonly emit: SttEmit,
     private readonly close: () => void,
     private readonly transcribe: ClipTranscriber = transcribeClip,
+    private readonly maxBytes: number = DEFAULT_SESSION_BYTES,
   ) {
     this.timer = setInterval(() => this.tick(), PARTIAL_INTERVAL_MS);
     emit({ type: 'ready' });
@@ -209,7 +216,7 @@ export class HttpSttSession implements SttSession {
 
   pushAudio(pcm: Uint8Array): void {
     if (this.finished || this.aborted) return;
-    const room = MAX_SESSION_BYTES - this.bytes;
+    const room = this.maxBytes - this.bytes;
     if (room <= 0) return;
     const part = pcm.byteLength > room ? pcm.subarray(0, room) : pcm;
     this.chunks.push(part.slice());
@@ -308,6 +315,7 @@ export class RealtimeSttSession implements SttSession {
     private readonly emit: SttEmit,
     private readonly close: () => void,
     createWebSocket: WebSocketFactory = defaultWebSocketFactory,
+    private readonly maxBytes: number = DEFAULT_SESSION_BYTES,
   ) {
     this.url = realtimeUrl(config.baseUrl);
     this.ws = createWebSocket(this.url, authHeaders(config));
@@ -378,7 +386,7 @@ export class RealtimeSttSession implements SttSession {
 
   pushAudio(pcm: Uint8Array): void {
     if (this.closed || this.finishing) return;
-    const room = MAX_SESSION_BYTES - this.bytes;
+    const room = this.maxBytes - this.bytes;
     if (room <= 0) return;
     const part = pcm.byteLength > room ? pcm.subarray(0, room) : pcm;
     this.bytes += part.byteLength;
@@ -423,13 +431,15 @@ export function openSttSession(
   language: string,
   emit: SttEmit,
   close: () => void,
+  maxSeconds: number = DEFAULT_SESSION_SECONDS,
 ): SttSession {
+  const maxBytes = maxSeconds * BYTES_PER_SECOND;
   if (!config.baseUrl) {
     emit({ type: 'error', error: 'No speech recognition endpoint is set' });
     close();
     return { pushAudio() {}, finish() {}, abort() {} };
   }
   return config.protocol === 'realtime'
-    ? new RealtimeSttSession(config, emit, close)
-    : new HttpSttSession(config, language, emit, close);
+    ? new RealtimeSttSession(config, emit, close, defaultWebSocketFactory, maxBytes)
+    : new HttpSttSession(config, language, emit, close, transcribeClip, maxBytes);
 }

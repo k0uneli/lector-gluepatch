@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { Downsampler, Endpointer, floatTo16BitPCM, rms } from './audio';
+import {
+  DEFAULT_ENDPOINTING,
+  Downsampler,
+  encodeWav,
+  Endpointer,
+  floatTo16BitPCM,
+  rms,
+} from './audio';
 
 function chunked(downsampler: Downsampler, input: Float32Array, size: number): Float32Array {
   const parts: number[] = [];
@@ -80,5 +87,44 @@ describe('Endpointer', () => {
     const endpointer = new Endpointer(options);
     expect(endpointer.push(0.5, 4_900)).toBe(false);
     expect(endpointer.push(0.5, 100)).toBe(true);
+  });
+});
+
+describe('Endpointer options', () => {
+  it('waits out a longer pause when asked to', () => {
+    const endpointer = new Endpointer({ ...DEFAULT_ENDPOINTING, silenceMs: 2_500 });
+    expect(endpointer.push(0.1, 500)).toBe(false);
+    expect(endpointer.push(0, 2_000)).toBe(false);
+    expect(endpointer.push(0, 600)).toBe(true);
+  });
+
+  it('never stops on silence in manual mode, only at the cap', () => {
+    const endpointer = new Endpointer({
+      ...DEFAULT_ENDPOINTING,
+      silenceMs: Infinity,
+      noSpeechMs: Infinity,
+      maxMs: 120_000,
+    });
+    expect(endpointer.push(0.1, 500)).toBe(false);
+    expect(endpointer.push(0, 60_000)).toBe(false);
+    expect(endpointer.push(0, 60_000)).toBe(true);
+  });
+});
+
+describe('encodeWav', () => {
+  it('wraps 16-bit mono PCM in a WAV header', async () => {
+    const blob = encodeWav([new Int16Array([1, -1]), new Int16Array([256])]);
+    expect(blob.type).toBe('audio/wav');
+    const view = new DataView(await blob.arrayBuffer());
+    const text = (offset: number) =>
+      String.fromCharCode(...[0, 1, 2, 3].map((i) => view.getUint8(offset + i)));
+    expect(text(0)).toBe('RIFF');
+    expect(text(8)).toBe('WAVE');
+    expect(view.getUint32(24, true)).toBe(16_000);
+    expect(view.getUint32(40, true)).toBe(6);
+    expect(view.byteLength).toBe(50);
+    expect([view.getInt16(44, true), view.getInt16(46, true), view.getInt16(48, true)]).toEqual([
+      1, -1, 256,
+    ]);
   });
 });

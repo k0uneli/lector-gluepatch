@@ -21,6 +21,8 @@ export const BOOKS_DIR = path.join(DATA_DIR, 'books');
 // Uploaded lesson audio lives on disk (never in SQLite), one file per lesson:
 // AUDIO_DIR/<lessonId><ext> (#185). Deleted by the lesson/collection delete routes.
 export const AUDIO_DIR = path.join(DATA_DIR, 'audio');
+// Saved conversations: CONVERSATION_AUDIO_DIR/<conversationId>/ holds its recordings.
+export const CONVERSATION_AUDIO_DIR = path.join(DATA_DIR, 'conversations');
 
 let _db: Database | null = null;
 
@@ -506,6 +508,37 @@ function getDb(): Database {
       newWords TEXT NOT NULL,
       createdAt TEXT NOT NULL,
       PRIMARY KEY (userId, language, day)
+    );
+
+    -- Saved conversations. recordingPath is the stitched MP3 of the whole
+    -- chat; recordingMessages is how many messages it covered when built.
+    CREATE TABLE IF NOT EXISTS conversations (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL DEFAULT 'local',
+      language TEXT NOT NULL,
+      topic TEXT NOT NULL DEFAULT '',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      recordingPath TEXT,
+      recordingDurationMs INTEGER,
+      recordingMessages INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_conversations_user_lang
+      ON conversations(userId, language, updatedAt);
+
+    -- newWords is JSON string[]; audioPath is the learner's own recording (MP3).
+    CREATE TABLE IF NOT EXISTS conversation_messages (
+      conversationId TEXT NOT NULL,
+      userId TEXT NOT NULL DEFAULT 'local',
+      idx INTEGER NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+      text TEXT NOT NULL,
+      translation TEXT,
+      newPercent REAL,
+      newWords TEXT,
+      audioPath TEXT,
+      createdAt TEXT NOT NULL,
+      PRIMARY KEY (conversationId, idx)
     );
 
     -- Podcast shows: one per source book. sourceKey is the book's collectionId,

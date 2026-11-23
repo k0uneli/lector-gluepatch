@@ -343,6 +343,28 @@ describe('HttpSttSession', () => {
 
     expect(sizes.at(-1)).toBe(30 * ONE_SECOND);
   });
+
+  test('a longer session keeps as much as it asked for', async () => {
+    const sizes: number[] = [];
+    const rec = recorder();
+    const session = new HttpSttSession(
+      HTTP_CONFIG,
+      'af',
+      rec.emit,
+      rec.close,
+      async (_c, wav) => {
+        sizes.push(wav.byteLength - 44);
+        return '';
+      },
+      90 * ONE_SECOND,
+    );
+
+    for (let i = 0; i < 91; i++) session.pushAudio(audio(ONE_SECOND));
+    session.finish();
+    await waitFor(() => rec.state.closed);
+
+    expect(sizes.at(-1)).toBe(90 * ONE_SECOND);
+  });
 });
 
 describe('RealtimeSttSession', () => {

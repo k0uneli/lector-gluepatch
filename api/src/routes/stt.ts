@@ -9,6 +9,8 @@ import {
   resolveSttConfig,
   type SttServerMessage,
   type SttSession,
+  DEFAULT_SESSION_SECONDS,
+  MAX_SESSION_SECONDS,
 } from '../lib/stt';
 
 /**
@@ -44,6 +46,11 @@ export function makeSttRoutes(mode: LectorMode = config.mode): Hono {
       const userId = getCurrentUserId(c);
       const language = resolveLanguage(c.req.query('language'), userId);
       const stt = resolveSttConfig(userId);
+      const requested = Number(c.req.query('maxSeconds'));
+      const maxSeconds =
+        Number.isInteger(requested) && requested > 0
+          ? Math.min(requested, MAX_SESSION_SECONDS)
+          : DEFAULT_SESSION_SECONDS;
       let session: SttSession | null = null;
       let open = true;
 
@@ -52,9 +59,15 @@ export function makeSttRoutes(mode: LectorMode = config.mode): Hono {
           const emit = (message: SttServerMessage) => {
             if (open) ws.send(JSON.stringify(message));
           };
-          session = openSttSession(stt, language, emit, () => {
-            if (open) ws.close();
-          });
+          session = openSttSession(
+            stt,
+            language,
+            emit,
+            () => {
+              if (open) ws.close();
+            },
+            maxSeconds,
+          );
         },
         onMessage(event) {
           if (typeof event.data === 'string') {

@@ -90,3 +90,26 @@ export class Endpointer {
       : this.elapsed >= this.options.noSpeechMs;
   }
 }
+
+/** Mono 16-bit PCM chunks as a WAV file. */
+export function encodeWav(chunks: readonly Int16Array[], sampleRate = STT_SAMPLE_RATE): Blob {
+  const samples = chunks.reduce((n, c) => n + c.length, 0);
+  const header = new DataView(new ArrayBuffer(44));
+  const text = (offset: number, value: string) =>
+    [...value].forEach((ch, i) => header.setUint8(offset + i, ch.charCodeAt(0)));
+  text(0, 'RIFF');
+  header.setUint32(4, 36 + samples * 2, true);
+  text(8, 'WAVEfmt ');
+  header.setUint32(16, 16, true);
+  header.setUint16(20, 1, true);
+  header.setUint16(22, 1, true);
+  header.setUint32(24, sampleRate, true);
+  header.setUint32(28, sampleRate * 2, true);
+  header.setUint16(32, 2, true);
+  header.setUint16(34, 16, true);
+  text(36, 'data');
+  header.setUint32(40, samples * 2, true);
+  return new Blob([header.buffer, ...chunks.map((c) => c.buffer as ArrayBuffer)], {
+    type: 'audio/wav',
+  });
+}

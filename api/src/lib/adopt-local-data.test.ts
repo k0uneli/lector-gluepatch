@@ -45,6 +45,8 @@ function createSchema(db: Database): void {
     CREATE TABLE transcript_segments (userId TEXT NOT NULL DEFAULT 'local', lessonId TEXT NOT NULL, idx INTEGER NOT NULL, PRIMARY KEY (userId, lessonId, idx));
     CREATE TABLE recall_items     (userId TEXT NOT NULL DEFAULT 'local', language TEXT NOT NULL, day TEXT NOT NULL, idx INTEGER NOT NULL, PRIMARY KEY (userId, language, day, idx));
     CREATE TABLE reading_challenges (userId TEXT NOT NULL DEFAULT 'local', language TEXT NOT NULL, day TEXT NOT NULL, PRIMARY KEY (userId, language, day));
+    CREATE TABLE conversations    (id TEXT PRIMARY KEY, userId TEXT NOT NULL DEFAULT 'local', language TEXT NOT NULL);
+    CREATE TABLE conversation_messages (conversationId TEXT NOT NULL, userId TEXT NOT NULL DEFAULT 'local', idx INTEGER NOT NULL, PRIMARY KEY (conversationId, idx));
     CREATE TABLE podcast_shows    (userId TEXT NOT NULL DEFAULT 'local', id TEXT NOT NULL, PRIMARY KEY (userId, id));
     CREATE TABLE podcast_episodes (userId TEXT NOT NULL DEFAULT 'local', id TEXT NOT NULL, PRIMARY KEY (userId, id));
     CREATE TABLE podcast_feed_tokens (userId TEXT PRIMARY KEY);
